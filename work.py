@@ -72,111 +72,14 @@ HOOK_TO_STAGE = {
 # Мьютекс для защиты доступа к базе данных при одновременных запросах
 db_lock = threading.Lock()
 
-# Обработчики для каждого веб-хука (POST-запросы)
-@app.route('/hook<int:hook_id>/', methods=['POST'])
-def handle_webhook_post(hook_id):
+# Общая функция обработки веб-хука (для обоих методов GET и POST)
+def process_webhook(hook_id, name, summa_str):
     if hook_id < 1 or hook_id > 25:
         return jsonify({"status": "error", "message": "Invalid hook ID"}), 400
-    
-    # Получаем данные из POST-запроса
-    try:
-        # Проверяем формат данных
-        content_type = request.headers.get('Content-Type', '')
-        
-        if 'application/json' in content_type:
-            # Если данные пришли в формате JSON
-            data = request.json
-            name = data.get('name', '')
-            summa_str = data.get('summa', '0')
-        elif 'application/x-www-form-urlencoded' in content_type:
-            # Если данные пришли в формате form-data
-            name = request.form.get('name', '')
-            summa_str = request.form.get('summa', '0')
-        else:
-            # Пробуем получить данные из тела запроса напрямую
-            try:
-                data = json.loads(request.data)
-                name = data.get('name', '')
-                summa_str = data.get('summa', '0')
-            except:
-                # Если не удалось распарсить JSON, используем аргументы запроса
-                name = request.args.get('name', '')
-                summa_str = request.args.get('summa', '0')
-        
-        # Преобразование суммы в число
-        try:
-            summa = float(str(summa_str).replace(' ', '').replace(',', '.'))
-        except ValueError:
-            summa = 0
-        
-        stage = HOOK_TO_STAGE.get(hook_id, "Неизвестно")
-        
-        # Используем блокировку для предотвращения конфликтов при одновременных запросах
-        with db_lock:
-            conn = sqlite3.connect('webhooks.db')
-            cursor = conn.cursor()
-            
-            # Сохраняем информацию о сделке
-            cursor.execute(
-                "INSERT INTO deals (hook_id, name, summa, stage) VALUES (?, ?, ?, ?)",
-                (hook_id, name, summa, stage)
-            )
-            
-            # Обновляем ежедневную статистику
-            today = datetime.now().strftime('%Y-%m-%d')
-            
-            # Проверяем, есть ли уже запись для этой стадии на сегодня
-            cursor.execute(
-                "SELECT id, count, total_summa FROM daily_stats WHERE date = ? AND stage = ?",
-                (today, stage)
-            )
-            result = cursor.fetchone()
-            
-            if result:
-                # Обновляем существующую запись
-                stat_id, count, total_summa = result
-                cursor.execute(
-                    "UPDATE daily_stats SET count = ?, total_summa = ? WHERE id = ?",
-                    (count + 1, total_summa + summa, stat_id)
-                )
-            else:
-                # Создаем новую запись
-                cursor.execute(
-                    "INSERT INTO daily_stats (date, stage, count, total_summa) VALUES (?, ?, ?, ?)",
-                    (today, stage, 1, summa)
-                )
-            
-            conn.commit()
-            conn.close()
-        
-        return jsonify({
-            "status": "success", 
-            "message": f"Webhook {hook_id} processed",
-            "data": {
-                "name": name,
-                "summa": summa,
-                "stage": stage
-            }
-        })
-        
-    except Exception as e:
-        return jsonify({
-            "status": "error", 
-            "message": f"Error processing webhook: {str(e)}"
-        }), 500
-
-# Для обратной совместимости также поддерживаем GET-запросы
-@app.route('/hook<int:hook_id>/', methods=['GET'])
-def handle_webhook_get(hook_id):
-    if hook_id < 1 or hook_id > 25:
-        return jsonify({"status": "error", "message": "Invalid hook ID"}), 400
-    
-    name = request.args.get('name', '')
-    summa_str = request.args.get('summa', '0')
     
     # Преобразование суммы в число
     try:
-        summa = float(summa_str.replace(' ', '').replace(',', '.'))
+        summa = float(str(summa_str).replace(' ', '').replace(',', '.'))
     except ValueError:
         summa = 0
     
@@ -220,13 +123,99 @@ def handle_webhook_get(hook_id):
         conn.commit()
         conn.close()
     
-    return jsonify({"status": "success", "message": f"Webhook {hook_id} processed"})
+    return jsonify({
+        "status": "success", 
+        "message": f"Webhook {hook_id} processed",
+        "data": {
+            "name": name,
+            "summa": summa,
+            "stage": stage
+        }
+    })
+
+# Обработчик для GET запросов с параметрами в URL
+@app.route('/hook<int:hook_id>/', methods=['GET'])
+def handle_webhook_get(hook_id):
+    name = request.args.get('name', '')
+    summa_str = request.args.get('summa', '0')
+    return process_webhook(hook_id, name, summa_str)
+
+# Обработчик для POST запросов с JSON-телом или URL-параметрами
+@app.route('/hook<int:hook_id>/', methods=['POST'])
+def handle_webhook_post(hook_id):
+    # Проверяем формат данных
+    content_type = request.headers.get('Content-Type', '')
+    
+    # Логирование для отладки
+    app.logger.info(f"POST request received for hook {hook_id}")
+    app.logger.info(f"Content-Type: {content_type}")
+    app.logger.info(f"URL: {request.url}")
+    app.logger.info(f"Args: {request.args}")
+    
+    try:
+        # Получаем аргументы из URL
+        name = request.args.get('name', '')
+        summa_str = request.args.get('summa', '0')
+        
+        # Если в URL нет параметров, проверяем тело запроса
+        if not name:
+            if 'application/json' in content_type:
+                # Если данные пришли в формате JSON
+                data = request.json
+                name = data.get('name', '')
+                summa_str = data.get('summa', '0')
+            elif 'application/x-www-form-urlencoded' in content_type:
+                # Если данные пришли в формате form-data
+                name = request.form.get('name', '')
+                summa_str = request.form.get('summa', '0')
+            else:
+                # Пробуем получить данные из тела запроса напрямую
+                try:
+                    data = json.loads(request.data)
+                    name = data.get('name', '')
+                    summa_str = data.get('summa', '0')
+                except:
+                    app.logger.info("Failed to parse JSON from request body")
+        
+        app.logger.info(f"Extracted name: {name}, summa: {summa_str}")
+        return process_webhook(hook_id, name, summa_str)
+    
+    except Exception as e:
+        app.logger.error(f"Error processing POST webhook: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# Обработчик для запросов вида /hook1/name=XXX&summa=YYY (без вопросительного знака)
+@app.route('/hook<int:hook_id>/<path:params>', methods=['GET', 'POST'])
+def handle_webhook_with_params_in_path(hook_id, params):
+    app.logger.info(f"Request with params in path received for hook {hook_id}")
+    app.logger.info(f"Params: {params}")
+    
+    # Преобразуем параметры из пути в словарь
+    params_dict = {}
+    try:
+        # Разбиваем параметры по символу &
+        param_pairs = params.split('&')
+        for pair in param_pairs:
+            # Каждую пару разбиваем по символу =
+            if '=' in pair:
+                key, value = pair.split('=', 1)
+                params_dict[key] = value
+    except Exception as e:
+        app.logger.error(f"Error parsing params: {e}")
+    
+    # Получаем параметры
+    name = params_dict.get('name', '')
+    summa_str = params_dict.get('summa', '0')
+    
+    app.logger.info(f"Extracted from path: name={name}, summa={summa_str}")
+    
+    # Обрабатываем данные
+    return process_webhook(hook_id, name, summa_str)
 
 # Маршрут для отображения главной страницы
 @app.route('/')
 def index():
     return render_template('index.html')
-
 
 # API для получения статистики по всем стадиям
 @app.route('/api/stats', methods=['GET'])
@@ -285,11 +274,6 @@ def get_available_dates():
     conn.close()
     
     return jsonify(dates)
-
-
-@app.route('/robots.txt')
-def robots():
-    return app.send_static_file('robots.txt')
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5001, threaded=True)
