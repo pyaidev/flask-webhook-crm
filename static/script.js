@@ -18,11 +18,73 @@ document.addEventListener('DOMContentLoaded', function() {
     const totalSumEl = document.getElementById('totalSum');
     const totalHooksEl = document.getElementById('totalHooks');
     
+    // Добавляем элементы для вывода процентов
+    const statsContainer = document.querySelector('.stats-summary');
+    
+    // Создаем и добавляем элементы для процентов подтверждений
+    const confirmPercentItem = document.createElement('div');
+    confirmPercentItem.className = 'summary-item';
+    confirmPercentItem.innerHTML = `
+        <div class="summary-title">% подтверждений</div>
+        <div class="summary-value" id="confirmPercent">0%</div>
+        <div class="summary-formula">=(п.13+п.18+п.22)/п.7×100%</div>
+    `;
+    statsContainer.appendChild(confirmPercentItem);
+    
+    // Создаем и добавляем элементы для процентов отмен
+    const cancelPercentItem = document.createElement('div');
+    cancelPercentItem.className = 'summary-item';
+    cancelPercentItem.innerHTML = `
+        <div class="summary-title">% отмен</div>
+        <div class="summary-value" id="cancelPercent">0%</div>
+        <div class="summary-formula">=(п.14+п.19+п.23)/п.7×100%</div>
+    `;
+    statsContainer.appendChild(cancelPercentItem);
+    
+    // Создаем и добавляем элементы для процентов недозвонов
+    const missedPercentItem = document.createElement('div');
+    missedPercentItem.className = 'summary-item';
+    missedPercentItem.innerHTML = `
+        <div class="summary-title">% недозвонов</div>
+        <div class="summary-value" id="missedPercent">0%</div>
+        <div class="summary-formula">=(п.15+п.20+п.24)/п.7×100%</div>
+    `;
+    statsContainer.appendChild(missedPercentItem);
+    
     // Массив с названиями месяцев
     const months = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
     
     // Массив с названиями дней недели
     const weekDays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+    
+    // Порядок стадий сделок для отображения
+    const stagesOrder = [
+        "Все сделки",
+        "Без статуса",
+        "Без даты",
+        "Без региона",
+        "Без суммы",
+        "Без адреса",
+        "Все готово",
+        "МСК",
+        "СПб",
+        "Регион",
+        "Звоним без предоплаты",
+        "Звоним без предоплаты несколько товаров",
+        "Подтвердил заказ без предоплаты",
+        "Отменил заказ без предоплаты",
+        "Не взял трубку без предоплаты",
+        "Звоним с предоплатой",
+        "Звоним с предоплатой несколько товаров",
+        "Подтвердил заказ с предоплатой",
+        "Отменил заказ с предоплатой",
+        "Не взял трубку с предоплатой",
+        "Звоним регион",
+        "Подтвердил заказ регион",
+        "Отменил заказ регион",
+        "Не взял трубку регион",
+        "Непонятно"
+    ];
     
     // Функция для форматирования даты в виде 'YYYY-MM-DD'
     function formatDate(date) {
@@ -152,47 +214,82 @@ document.addEventListener('DOMContentLoaded', function() {
                 let totalHooks = 0;
                 let totalSum = 0;
                 
-                // Если нет данных, показываем сообщение
-                if (data.length === 0) {
-                    const noDataEl = document.createElement('div');
-                    noDataEl.className = 'stage-item';
-                    noDataEl.innerHTML = '<div class="stage-column">Нет данных за выбранную дату</div><div class="count-column">-</div><div class="sum-column">-</div>';
-                    stagesListEl.appendChild(noDataEl);
-                } else {
-                    // Отображаем данные по каждой стадии
-                    data.forEach(stage => {
-                        const stageEl = document.createElement('div');
-                        stageEl.className = 'stage-item';
-                        stageEl.innerHTML = `
-                            <div class="stage-column">${stage.stage}</div>
-                            <div class="count-column">${stage.count}</div>
-                            <div class="sum-column">${stage.total_summa.toLocaleString()} ₽</div>
-                        `;
+                // Создаем объект для хранения данных по стадиям
+                const stagesData = {};
+                
+                // Заполняем объект стадий начальными нулевыми значениями
+                stagesOrder.forEach(stage => {
+                    stagesData[stage] = { count: 0, total_summa: 0 };
+                });
+                
+                // Заполняем данными из API
+                data.forEach(stage => {
+                    if (stagesData[stage.stage]) {
+                        stagesData[stage.stage] = {
+                            count: stage.count,
+                            total_summa: stage.total_summa
+                        };
+                    }
+                    
+                    // Суммируем для итогов
+                    totalHooks += stage.count;
+                    totalSum += stage.total_summa;
+                });
+                
+                // Отображаем каждую стадию в заданном порядке
+                stagesOrder.forEach((stageName, index) => {
+                    const stage = stagesData[stageName];
+                    const stageEl = document.createElement('div');
+                    stageEl.className = 'stage-item';
+                    stageEl.innerHTML = `
+                        <div class="stage-column">п.${index + 1}. ${stageName}</div>
+                        <div class="count-column">${stage.count}</div>
+                        <div class="sum-column">${stage.total_summa.toLocaleString()} ₽</div>
+                    `;
+                    
+                    // Добавляем обработчик клика для просмотра сделок по стадии
+                    stageEl.addEventListener('click', function() {
+                        selectedStage = stageName;
+                        selectedStageEl.textContent = selectedStage;
                         
-                        // Добавляем обработчик клика для просмотра сделок по стадии
-                        stageEl.addEventListener('click', function() {
-                            selectedStage = stage.stage;
-                            selectedStageEl.textContent = selectedStage;
-                            
-                            // Загружаем сделки для выбранной стадии
-                            loadDeals(selectedStage, date);
-                            
-                            // Скрываем статистику и показываем контейнер со сделками
-                            statsContainerEl.style.display = 'none';
-                            dealsContainerEl.style.display = 'block';
-                        });
+                        // Загружаем сделки для выбранной стадии
+                        loadDeals(selectedStage, date);
                         
-                        stagesListEl.appendChild(stageEl);
-                        
-                        // Суммируем для итогов
-                        totalHooks += stage.count;
-                        totalSum += stage.total_summa;
+                        // Скрываем статистику и показываем контейнер со сделками
+                        statsContainerEl.style.display = 'none';
+                        dealsContainerEl.style.display = 'block';
                     });
-                }
+                    
+                    stagesListEl.appendChild(stageEl);
+                });
                 
                 // Обновляем итоговые значения
                 totalHooksEl.textContent = totalHooks;
                 totalSumEl.textContent = totalSum.toLocaleString() + ' ₽';
+                
+                // Расчет процентов
+                const allReadyCount = stagesData["Все готово"].count || 1; // Используем 1 для избежания деления на 0
+                
+                // Процент подтверждений
+                const confirmCount = (stagesData["Подтвердил заказ без предоплаты"].count + 
+                                     stagesData["Подтвердил заказ с предоплатой"].count + 
+                                     stagesData["Подтвердил заказ регион"].count);
+                const confirmPercent = (confirmCount / allReadyCount) * 100;
+                document.getElementById('confirmPercent').textContent = confirmPercent.toFixed(2) + '%';
+                
+                // Процент отмен
+                const cancelCount = (stagesData["Отменил заказ без предоплаты"].count + 
+                                    stagesData["Отменил заказ с предоплатой"].count + 
+                                    stagesData["Отменил заказ регион"].count);
+                const cancelPercent = (cancelCount / allReadyCount) * 100;
+                document.getElementById('cancelPercent').textContent = cancelPercent.toFixed(2) + '%';
+                
+                // Процент недозвонов
+                const missedCount = (stagesData["Не взял трубку без предоплаты"].count + 
+                                    stagesData["Не взял трубку с предоплатой"].count + 
+                                    stagesData["Не взял трубку регион"].count);
+                const missedPercent = (missedCount / allReadyCount) * 100;
+                document.getElementById('missedPercent').textContent = missedPercent.toFixed(2) + '%';
             })
             .catch(error => {
                 console.error('Ошибка при загрузке статистики:', error);

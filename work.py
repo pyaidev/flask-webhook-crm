@@ -2,7 +2,7 @@ from flask import Flask, request, render_template, jsonify
 from flask_cors import CORS
 import sqlite3
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 import threading
 import time
 import urllib.parse
@@ -22,38 +22,7 @@ app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)  # Разрешаем кросс-доменные запросы
 logger = app.logger
 
-# Инициализация базы данных
-def init_db():
-    conn = sqlite3.connect('webhooks.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS deals (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        hook_id INTEGER,
-        name TEXT,
-        summa REAL,
-        stage TEXT,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-    ''')
-    
-    # Создаем таблицу для ежедневной статистики
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS daily_stats (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        date TEXT,
-        stage TEXT,
-        count INTEGER,
-        total_summa REAL
-    )
-    ''')
-    
-    conn.commit()
-    conn.close()
-
-init_db()
-
-# Словарь для маппинга номера хука на стадию
+# Словарь для маппинга номера хука на стадию - перемещаем объявление вверх!
 HOOK_TO_STAGE = {
     1: "Все сделки",
     2: "Без статуса",
@@ -84,6 +53,62 @@ HOOK_TO_STAGE = {
 
 # Мьютекс для защиты доступа к базе данных при одновременных запросах
 db_lock = threading.Lock()
+
+def ensure_all_stages_in_db():
+    """Убедиться, что все стадии добавлены в базу данных."""
+    today = datetime.now().strftime('%Y-%m-%d')
+    
+    with db_lock:
+        conn = sqlite3.connect('webhooks.db')
+        cursor = conn.cursor()
+        
+        # Получаем существующие стадии на сегодняшний день
+        cursor.execute(
+            "SELECT stage FROM daily_stats WHERE date = ?",
+            (today,)
+        )
+        existing_stages = {row[0] for row in cursor.fetchall()}
+        
+        # Добавляем отсутствующие стадии с нулевыми значениями
+        for stage_id, stage_name in HOOK_TO_STAGE.items():
+            if stage_name not in existing_stages:
+                cursor.execute(
+                    "INSERT INTO daily_stats (date, stage, count, total_summa) VALUES (?, ?, ?, ?)",
+                    (today, stage_name, 0, 0)
+                )
+                logger.info(f"Добавлена стадия {stage_name} в статистику за {today}")
+        
+        conn.commit()
+        conn.close()
+
+# Инициализация базы данных
+def init_db():
+    conn = sqlite3.connect('webhooks.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS deals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        hook_id INTEGER,
+        name TEXT,
+        summa REAL,
+        stage TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+    
+    # Создаем таблицу для ежедневной статистики
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS daily_stats (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT,
+        stage TEXT,
+        count INTEGER,
+        total_summa REAL
+    )
+    ''')
+    
+    conn.commit()
+    conn.close()
 
 # Функция для проверки и исправления шаблонных значений
 def clean_template_values(name, summa_str):
@@ -295,6 +320,14 @@ def get_stats():
     )
     stats = [dict(row) for row in cursor.fetchall()]
     
+    # Проверяем, есть ли записи для всех стадий, если нет - добавляем их с нулевыми значениями
+    existing_stages = {stat['stage'] for stat in stats}
+    
+    # Добавляем отсутствующие стадии с нулевыми значениями
+    for stage_id, stage_name in HOOK_TO_STAGE.items():
+        if stage_name not in existing_stages:
+            stats.append({'stage': stage_name, 'count': 0, 'total_summa': 0})
+    
     conn.close()
     
     return jsonify(stats)
@@ -342,5 +375,24 @@ def get_available_dates():
 def health_check():
     return jsonify({"status": "ok", "timestamp": datetime.now().isoformat()})
 
+def schedule_daily_stats_initialization():
+    while True:
+        now = datetime.now()
+        next_run = datetime(now.year, now.month, now.day) + timedelta(days=1, minutes=1)
+        sleep_time = (next_run - now).total_seconds()
+        time.sleep(sleep_time)
+        ensure_all_stages_in_db()
+        logger.info("Выполнена ежедневная инициализация статистики")
+
 if __name__ == '__main__':
+    # Инициализируем базу данных
+    init_db()
+    # Добавляем все стадии в БД
+    ensure_all_stages_in_db()
+    
+    # Запускаем поток для ежедневной инициализации статистики
+    stats_thread = threading.Thread(target=schedule_daily_stats_initialization, daemon=True)
+    stats_thread.start()
+    
+    # Запускаем сервер
     app.run(debug=True, host='0.0.0.0', port=5001, threaded=True)
