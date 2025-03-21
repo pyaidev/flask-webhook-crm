@@ -94,6 +94,24 @@ document.addEventListener('DOMContentLoaded', function() {
         return `${day}.${month}.${year}`;
     }
     
+    // Функция для обновления заголовка статистики
+    function updateStatisticsHeader(date) {
+        // Форматируем дату для заголовка
+        const displayDate = formatDisplayDate(date);
+        
+        // Обновляем заголовок в DOM
+        if (statsHeaderEl && statsHeaderEl.querySelector('span')) {
+            statsHeaderEl.querySelector('span').textContent = displayDate;
+        } else {
+            currentDateEl.textContent = displayDate;
+        }
+        
+        // Также устанавливаем текст в span#currentDate
+        if (currentDateEl) {
+            currentDateEl.textContent = displayDate;
+        }
+    }
+    
     // Функция для отрисовки календаря
     function renderCalendar(date) {
         const year = date.getFullYear();
@@ -137,26 +155,29 @@ document.addEventListener('DOMContentLoaded', function() {
         endDay.setDate(endDay.getDate() + (7 - lastDayOfWeek));
         
         // Отрисовываем дни
-        let currentDay = new Date(startDay);
+        let currentDayOfCalendar = new Date(startDay);
         
-        while (currentDay <= endDay) {
+        while (currentDayOfCalendar <= endDay) {
             const dayEl = document.createElement('div');
             dayEl.className = 'calendar-day';
-            dayEl.textContent = currentDay.getDate();
+            dayEl.textContent = currentDayOfCalendar.getDate();
             
             // Если день не из текущего месяца, добавляем класс
-            if (currentDay.getMonth() !== month) {
+            if (currentDayOfCalendar.getMonth() !== month) {
                 dayEl.classList.add('other-month');
             }
             
             // Если это выбранный день, добавляем класс
             if (
-                currentDay.getDate() === currentDate.getDate() &&
-                currentDay.getMonth() === currentDate.getMonth() &&
-                currentDay.getFullYear() === currentDate.getFullYear()
+                currentDayOfCalendar.getDate() === currentDate.getDate() &&
+                currentDayOfCalendar.getMonth() === currentDate.getMonth() &&
+                currentDayOfCalendar.getFullYear() === currentDate.getFullYear()
             ) {
                 dayEl.classList.add('active');
             }
+            
+            // Для сохранения даты в замыкании
+            const clickDate = new Date(currentDayOfCalendar);
             
             // Добавляем обработчик клика
             dayEl.addEventListener('click', function() {
@@ -169,19 +190,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Добавляем класс active к выбранному дню
                 dayEl.classList.add('active');
                 
-                // Обновляем текущую дату
-                currentDate = new Date(
-                    currentDay.getFullYear(),
-                    currentDay.getMonth(),
-                    currentDay.getDate()
-                );
+                // Обновляем текущую дату на выбранную дату из календаря
+                currentDate = new Date(clickDate);
                 
-                // Обновляем отображаемую дату
-                const formattedDate = formatDisplayDate(currentDate);
-                currentDateEl.textContent = formattedDate;
+                // Обновляем заголовок статистики
+                updateStatisticsHeader(currentDate);
                 
                 // Загружаем данные для выбранной даты
-                loadStats(formatDate(currentDate));
+                const formattedDate = formatDate(currentDate);
+                
+                // Добавляем случайный параметр для предотвращения кэширования
+                const cacheBuster = `&_=${Date.now()}`;
+                loadStats(formattedDate + cacheBuster);
                 
                 // Скрываем контейнер со сделками и показываем статистику
                 dealsContainerEl.style.display = 'none';
@@ -191,48 +211,62 @@ document.addEventListener('DOMContentLoaded', function() {
             calendarEl.appendChild(dayEl);
             
             // Переходим к следующему дню
-            currentDay.setDate(currentDay.getDate() + 1);
+            currentDayOfCalendar.setDate(currentDayOfCalendar.getDate() + 1);
         }
     }
     
     // Функция для загрузки статистики
     function loadStats(date) {
-        // Проверяем, есть ли данные для этой даты в кэше
-        if (cachedStatsData[date]) {
-            displayStats(cachedStatsData[date], date);
-            return;
-        }
+        console.log('Loading stats for date:', date);
+        
+        // Очистка cache buster если он есть
+        const cleanDate = date.split('&')[0];
+        
+        // Для отладки
+        console.log(`Requesting stats for: ${cleanDate}, AJAX URL: /api/stats?date=${date}`);
         
         // Если данных нет в кэше, загружаем с сервера
-        fetch(`/api/stats?date=${date}`)
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! Status: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                // Сохраняем данные в кэш
-                cachedStatsData[date] = data;
-                
-                // Отображаем данные
-                displayStats(data, date);
-            })
-            .catch(error => {
-                console.error('Ошибка при загрузке статистики:', error);
-                // Отображаем пустые данные при ошибке
-                displayStats([], date);
-            });
+        fetch(`/api/stats?date=${date}`, {
+            method: 'GET',
+            headers: {
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
+            }
+        })
+        .then(response => {
+            console.log('Response status:', response.status);
+            if (!response.ok) {
+                throw new Error(`HTTP error! Status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Received data:', data);
+            
+            // Отображаем данные
+            displayStats(data, cleanDate);
+        })
+        .catch(error => {
+            console.error('Ошибка при загрузке статистики:', error);
+            // Отображаем пустые данные при ошибке
+            displayStats([], cleanDate);
+        });
     }
     
     // Функция для отображения статистики из данных
     function displayStats(data, date) {
+        console.log('Displaying stats for:', date);
+        
         // Очищаем список стадий
         stagesListEl.innerHTML = '';
         
         // Обновляем заголовок статистики с выбранной датой
-        const displayDate = formatDisplayDate(new Date(date));
-        currentDateEl.textContent = displayDate;
+        const dateObj = new Date(date);
+        const displayDate = formatDisplayDate(dateObj);
+        
+        // Установка даты в заголовке статистики
+        document.querySelector('.stats-header h2 span').textContent = displayDate;
         
         // Расчет итоговых значений
         let totalHooks = 0;
@@ -247,18 +281,20 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         
         // Заполняем данными из API
-        data.forEach(stage => {
-            if (stagesData[stage.stage]) {
-                stagesData[stage.stage] = {
-                    count: stage.count || 0,
-                    total_summa: stage.total_summa || 0
-                };
-            }
-            
-            // Суммируем для итогов
-            totalHooks += (stage.count || 0);
-            totalSum += (stage.total_summa || 0);
-        });
+        if (Array.isArray(data)) {
+            data.forEach(stage => {
+                if (stage && stage.stage && stagesData[stage.stage]) {
+                    stagesData[stage.stage] = {
+                        count: stage.count || 0,
+                        total_summa: stage.total_summa || 0
+                    };
+                    
+                    // Суммируем для итогов
+                    totalHooks += (stage.count || 0);
+                    totalSum += (stage.total_summa || 0);
+                }
+            });
+        }
         
         // Отображаем каждую стадию в заданном порядке
         stagesOrder.forEach((stageName, index) => {
@@ -311,48 +347,65 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Функция для загрузки сделок по стадии
     function loadDeals(stage, date) {
-        fetch(`/api/deals/${encodeURIComponent(stage)}?date=${date}`)
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! Status: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                // Очищаем список сделок
-                dealsListEl.innerHTML = '';
-                
-                // Если нет данных, показываем сообщение
-                if (!data || data.length === 0) {
-                    const noDataEl = document.createElement('div');
-                    noDataEl.className = 'deal-item';
-                    noDataEl.innerHTML = '<div class="deal-name">Нет сделок для выбранной стадии</div><div class="deal-sum">-</div><div class="deal-time">-</div>';
-                    dealsListEl.appendChild(noDataEl);
-                } else {
-                    // Отображаем данные по каждой сделке
-                    data.forEach(deal => {
-                        const dealEl = document.createElement('div');
-                        dealEl.className = 'deal-item';
-                        
-                        // Форматируем время
-                        const dealTime = new Date(deal.timestamp);
-                        const formattedTime = dealTime.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-                        
-                        dealEl.innerHTML = `
-                            <div class="deal-name">${deal.name}</div>
-                            <div class="deal-sum">${deal.summa.toLocaleString()} ₽</div>
-                            <div class="deal-time">${formattedTime}</div>
-                        `;
-                        
-                        dealsListEl.appendChild(dealEl);
-                    });
-                }
-            })
-            .catch(error => {
-                console.error('Ошибка при загрузке сделок:', error);
-                // Показываем сообщение об ошибке
-                dealsListEl.innerHTML = '<div class="deal-item error">Ошибка загрузки данных</div>';
-            });
+        console.log(`Loading deals for stage: ${stage}, date: ${date}`);
+        
+        // Очистка cache buster если он есть
+        const cleanDate = date.split('&')[0];
+        
+        // Добавляем случайный параметр для предотвращения кэширования
+        const cacheBuster = `&_=${Date.now()}`;
+        
+        fetch(`/api/deals/${encodeURIComponent(stage)}?date=${cleanDate}${cacheBuster}`, {
+            method: 'GET',
+            headers: {
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! Status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Received deals:', data);
+            
+            // Очищаем список сделок
+            dealsListEl.innerHTML = '';
+            
+            // Если нет данных, показываем сообщение
+            if (!data || data.length === 0) {
+                const noDataEl = document.createElement('div');
+                noDataEl.className = 'deal-item';
+                noDataEl.innerHTML = '<div class="deal-name">Нет сделок для выбранной стадии</div><div class="deal-sum">-</div><div class="deal-time">-</div>';
+                dealsListEl.appendChild(noDataEl);
+            } else {
+                // Отображаем данные по каждой сделке
+                data.forEach(deal => {
+                    const dealEl = document.createElement('div');
+                    dealEl.className = 'deal-item';
+                    
+                    // Форматируем время
+                    const dealTime = new Date(deal.timestamp);
+                    const formattedTime = dealTime.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+                    
+                    dealEl.innerHTML = `
+                        <div class="deal-name">${deal.name}</div>
+                        <div class="deal-sum">${deal.summa.toLocaleString()} ₽</div>
+                        <div class="deal-time">${formattedTime}</div>
+                    `;
+                    
+                    dealsListEl.appendChild(dealEl);
+                });
+            }
+        })
+        .catch(error => {
+            console.error('Ошибка при загрузке сделок:', error);
+            // Показываем сообщение об ошибке
+            dealsListEl.innerHTML = '<div class="deal-item error">Ошибка загрузки данных</div>';
+        });
     }
     
     // Обработчик клика на кнопку "Назад"
@@ -366,25 +419,18 @@ document.addEventListener('DOMContentLoaded', function() {
     prevMonthBtn.addEventListener('click', function() {
         currentDate.setMonth(currentDate.getMonth() - 1);
         renderCalendar(currentDate);
-        // Загружаем статистику для первого дня отображаемого месяца
-        const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-        currentDate = firstDayOfMonth;
-        loadStats(formatDate(firstDayOfMonth));
-        currentDateEl.textContent = formatDisplayDate(firstDayOfMonth);
     });
     
     nextMonthBtn.addEventListener('click', function() {
         currentDate.setMonth(currentDate.getMonth() + 1);
         renderCalendar(currentDate);
-        // Загружаем статистику для первого дня отображаемого месяца
-        const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-        currentDate = firstDayOfMonth;
-        loadStats(formatDate(firstDayOfMonth));
-        currentDateEl.textContent = formatDisplayDate(firstDayOfMonth);
     });
     
     // Инициализация
     renderCalendar(currentDate);
-    currentDateEl.textContent = formatDisplayDate(currentDate);
-    loadStats(formatDate(currentDate));
+    updateStatisticsHeader(currentDate);
+    
+    // При инициализации добавляем случайный параметр для предотвращения кэширования
+    const cacheBuster = `&_=${Date.now()}`;
+    loadStats(formatDate(currentDate) + cacheBuster);
 });
