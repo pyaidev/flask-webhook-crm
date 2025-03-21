@@ -3,161 +3,63 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Статистика сделок Bitrix24</title>
-    <link rel="stylesheet" href="/static/styles.css">
-    <!-- Font Awesome для иконок -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <title>Статистика сделок</title>
+    <link rel="stylesheet" href="static/styles.css">
 </head>
 <body>
-    <div class="app-container">
-        <header class="app-header">
-            <div class="logo">
-                <i class="fas fa-chart-line"></i>
-                <h1>Статистика сделок</h1>
-            </div>
-            <div class="controls">
-                <div class="date-picker">
-                    <button id="prevMonth" class="btn btn-icon"><i class="fas fa-chevron-left"></i></button>
-                    <div id="currentMonth">Март 2025</div>
-                    <button id="nextMonth" class="btn btn-icon"><i class="fas fa-chevron-right"></i></button>
-                </div>
+    <div class="container">
+        <header>
+            <h1>Статистика сделок</h1>
+            <div class="date-controls">
+                <button id="prevMonth">◀</button>
+                <div id="currentMonth">Март 2025</div>
+                <button id="nextMonth">▶</button>
             </div>
         </header>
         
-        <div class="main-content">
-            <div class="sidebar">
-                <div class="calendar-container">
-                    <div class="calendar-header">
-                        <div class="day-name">Пн</div>
-                        <div class="day-name">Вт</div>
-                        <div class="day-name">Ср</div>
-                        <div class="day-name">Чт</div>
-                        <div class="day-name">Пт</div>
-                        <div class="day-name">Сб</div>
-                        <div class="day-name">Вс</div>
-                    </div>
-                    <div id="calendar" class="calendar-grid"></div>
+        <div class="calendar-container">
+            <div class="calendar" id="calendar"></div>
+        </div>
+        
+        <div class="content">
+            <div class="stats-container">
+                <div class="stats-header">
+                    <h2>Статистика за <span id="currentDate">21.03.2025</span></h2>
+                    <div class="period">расчетный период дня с 21:01 до 21:00</div>
                 </div>
                 
-                <div class="filter-container">
-                    <h3><i class="fas fa-filter"></i> Фильтры</h3>
-                    <div class="filter-group">
-                        <label for="stageFilter">Стадия:</label>
-                        <select id="stageFilter" class="form-control">
-                            <option value="all">Все стадии</option>
-                            <!-- Стадии будут добавлены динамически -->
-                        </select>
+                <div class="stats-summary">
+                    <div class="summary-item">
+                        <div class="summary-title">Сумма итог</div>
+                        <div class="summary-value" id="totalSum">0</div>
                     </div>
-                    <div class="filter-group">
-                        <label for="sumFilter">Сумма от:</label>
-                        <div class="range-container">
-                            <input type="range" id="sumFilter" min="0" max="500000" step="10000" value="0" class="form-range">
-                            <span id="sumFilterValue">0 ₽</span>
-                        </div>
+                    <div class="summary-item">
+                        <div class="summary-title">Вебхуков итог</div>
+                        <div class="summary-value" id="totalHooks">0</div>
+                    </div>
+                </div>
+                
+                <div class="stages-container">
+                    <div class="stages-header">
+                        <div class="stage-column">Стадия</div>
+                        <div class="count-column">пришло вебхуков</div>
+                        <div class="sum-column">Сумма</div>
+                    </div>
+                    <div class="stages-list" id="stagesList">
+                        <!-- Стадии будут добавлены через JavaScript -->
                     </div>
                 </div>
             </div>
             
-            <div class="content-area">
-                <div class="stats-container" id="statsContainer">
-                    <div class="stats-header">
-                        <h2>Статистика за <span id="currentDate">21.03.2025</span></h2>
-                        <div class="period">расчетный период дня с 21:01 до 21:00</div>
-                    </div>
-                    
-                    <div class="dashboard">
-                        <div class="dashboard-card total-sum">
-                            <div class="card-icon"><i class="fas fa-ruble-sign"></i></div>
-                            <div class="card-content">
-                                <div class="card-title">Сумма итог</div>
-                                <div class="card-value" id="totalSum">0 ₽</div>
-                            </div>
-                        </div>
-                        <div class="dashboard-card total-hooks">
-                            <div class="card-icon"><i class="fas fa-link"></i></div>
-                            <div class="card-content">
-                                <div class="card-title">Вебхуков итог</div>
-                                <div class="card-value" id="totalHooks">0</div>
-                            </div>
-                        </div>
-                        <div class="dashboard-card avg-sum">
-                            <div class="card-icon"><i class="fas fa-calculator"></i></div>
-                            <div class="card-content">
-                                <div class="card-title">Средняя сумма</div>
-                                <div class="card-value" id="avgSum">0 ₽</div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="data-table-container">
-                        <div class="table-header">
-                            <h3><i class="fas fa-list"></i> Данные по стадиям</h3>
-                            <div class="table-controls">
-                                <button id="refreshStats" class="btn btn-sm"><i class="fas fa-sync-alt"></i> Обновить</button>
-                                <div class="search-container">
-                                    <input type="text" id="stageSearch" class="form-control" placeholder="Поиск...">
-                                    <i class="fas fa-search"></i>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="table-wrapper">
-                            <table class="data-table">
-                                <thead>
-                                    <tr>
-                                        <th class="sortable" data-sort="stage">Стадия <i class="fas fa-sort"></i></th>
-                                        <th class="sortable" data-sort="count">Вебхуки <i class="fas fa-sort"></i></th>
-                                        <th class="sortable" data-sort="sum">Сумма <i class="fas fa-sort"></i></th>
-                                        <th>Действия</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="stagesList">
-                                    <!-- Данные будут добавлены через JavaScript -->
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+            <div class="deals-container" id="dealsContainer">
+                <div class="deals-header">
+                    <h2>Сделки по стадии: <span id="selectedStage">-</span></h2>
+                    <button id="backToStats">← Назад</button>
                 </div>
-                
-                <div class="deals-container" id="dealsContainer">
-                    <div class="deals-header">
-                        <div class="deals-title">
-                            <h2>Сделки: <span id="selectedStage">-</span></h2>
-                            <span class="deal-count" id="dealCount">0 сделок</span>
-                        </div>
-                        <button id="backToStats" class="btn"><i class="fas fa-arrow-left"></i> Назад к статистике</button>
-                    </div>
-                    
-                    <div class="deals-table-container">
-                        <div class="table-wrapper">
-                            <table class="data-table">
-                                <thead>
-                                    <tr>
-                                        <th class="sortable" data-sort="name">Название <i class="fas fa-sort"></i></th>
-                                        <th class="sortable" data-sort="sum">Сумма <i class="fas fa-sort"></i></th>
-                                        <th class="sortable" data-sort="time">Время <i class="fas fa-sort"></i></th>
-                                    </tr>
-                                </thead>
-                                <tbody id="dealsList">
-                                    <!-- Сделки будут добавлены через JavaScript -->
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+                <div class="deals-list" id="dealsList">
+                    <!-- Сделки будут добавлены через JavaScript -->
                 </div>
             </div>
-        </div>
-        
-        <footer class="app-footer">
-            <p>&copy; 2025 Статистика Bitrix24 Webhook</p>
-        </footer>
-    </div>
-    
-    <!-- Модальное окно загрузки -->
-    <div class="modal" id="loadingModal">
-        <div class="modal-content loading">
-            <div class="spinner"></div>
-            <p>Загрузка данных...</p>
         </div>
     </div>
     
