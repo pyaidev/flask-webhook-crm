@@ -54,18 +54,34 @@ HOOK_TO_STAGE = {
 # Мьютекс для защиты доступа к базе данных при одновременных запросах
 db_lock = threading.Lock()
 
+# Функция для получения текущей статистической даты
+def get_stat_date():
+    """
+    Возвращает дату для статистики с учетом правила:
+    - Если время с 00:00 до 21:00, возвращает текущую дату
+    - Если время с 21:01 до 23:59, возвращает следующую дату
+    """
+    now = datetime.now()
+    cutoff_time = now.replace(hour=21, minute=0, second=0, microsecond=0)
+    
+    # Если текущее время после 21:00, то используем следующую дату
+    if now > cutoff_time:
+        return (now + timedelta(days=1)).strftime('%Y-%m-%d')
+    else:
+        return now.strftime('%Y-%m-%d')
+
 def ensure_all_stages_in_db():
     """Убедиться, что все стадии добавлены в базу данных."""
-    today = datetime.now().strftime('%Y-%m-%d')
+    stat_date = get_stat_date()
     
     with db_lock:
         conn = sqlite3.connect('webhooks.db')
         cursor = conn.cursor()
         
-        # Получаем существующие стадии на сегодняшний день
+        # Получаем существующие стадии на дату
         cursor.execute(
             "SELECT stage FROM daily_stats WHERE date = ?",
-            (today,)
+            (stat_date,)
         )
         existing_stages = {row[0] for row in cursor.fetchall()}
         
@@ -74,9 +90,9 @@ def ensure_all_stages_in_db():
             if stage_name not in existing_stages:
                 cursor.execute(
                     "INSERT INTO daily_stats (date, stage, count, total_summa) VALUES (?, ?, ?, ?)",
-                    (today, stage_name, 0, 0)
+                    (stat_date, stage_name, 0, 0)
                 )
-                logger.info(f"Добавлена стадия {stage_name} в статистику за {today}")
+                logger.info(f"Добавлена стадия {stage_name} в статистику за {stat_date}")
         
         conn.commit()
         conn.close()
@@ -92,7 +108,8 @@ def init_db():
         name TEXT,
         summa REAL,
         stage TEXT,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        stat_date TEXT
     )
     ''')
     
@@ -159,26 +176,26 @@ def process_webhook(hook_id, name, summa_str):
     
     stage = HOOK_TO_STAGE.get(hook_id, "Неизвестно")
     
+    # Получаем дату для статистики с учетом времени
+    stat_date = get_stat_date()
+    
     # Используем блокировку для предотвращения конфликтов при одновременных запросах
     with db_lock:
         conn = sqlite3.connect('webhooks.db')
         cursor = conn.cursor()
         
-        # Сохраняем информацию о сделке
+        # Сохраняем информацию о сделке с датой статистики
         cursor.execute(
-            "INSERT INTO deals (hook_id, name, summa, stage) VALUES (?, ?, ?, ?)",
-            (hook_id, name, summa, stage)
+            "INSERT INTO deals (hook_id, name, summa, stage, stat_date) VALUES (?, ?, ?, ?, ?)",
+            (hook_id, name, summa, stage, stat_date)
         )
         deal_id = cursor.lastrowid
-        logger.info(f"Inserted deal with ID: {deal_id}")
+        logger.info(f"Inserted deal with ID: {deal_id}, stat_date: {stat_date}")
         
-        # Обновляем ежедневную статистику
-        today = datetime.now().strftime('%Y-%m-%d')
-        
-        # Проверяем, есть ли уже запись для этой стадии на сегодня
+        # Проверяем, есть ли уже запись для этой стадии на эту дату
         cursor.execute(
             "SELECT id, count, total_summa FROM daily_stats WHERE date = ? AND stage = ?",
-            (today, stage)
+            (stat_date, stage)
         )
         result = cursor.fetchone()
         
@@ -194,7 +211,7 @@ def process_webhook(hook_id, name, summa_str):
             # Создаем новую запись
             cursor.execute(
                 "INSERT INTO daily_stats (date, stage, count, total_summa) VALUES (?, ?, ?, ?)",
-                (today, stage, 1, summa)
+                (stat_date, stage, 1, summa)
             )
             stat_id = cursor.lastrowid
             logger.info(f"Inserted new daily stats with ID: {stat_id}")
@@ -208,7 +225,8 @@ def process_webhook(hook_id, name, summa_str):
         "data": {
             "name": name,
             "summa": summa,
-            "stage": stage
+            "stage": stage,
+            "stat_date": stat_date
         }
     })
 
@@ -307,7 +325,11 @@ def index():
 # API для получения статистики по всем стадиям
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
-    date = request.args.get('date', datetime.now().strftime('%Y-%m-%d'))
+    date = request.args.get('date')
+    
+    if not date:
+        # Если дата не указана, используем текущую дату
+        date = datetime.now().strftime('%Y-%m-%d')
     
     conn = sqlite3.connect('webhooks.db')
     conn.row_factory = sqlite3.Row
@@ -335,21 +357,26 @@ def get_stats():
 # API для получения сделок по стадии
 @app.route('/api/deals/<stage>', methods=['GET'])
 def get_deals_by_stage(stage):
-    date = request.args.get('date', datetime.now().strftime('%Y-%m-%d'))
+    date = request.args.get('date')
+    
+    if not date:
+        # Если дата не указана, используем текущую дату
+        date = datetime.now().strftime('%Y-%m-%d')
     
     conn = sqlite3.connect('webhooks.db')
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     
     # Получаем сделки по стадии и дате
+    # Учитываем как поле stat_date, так и timestamp для обратной совместимости
     cursor.execute(
         """
         SELECT id, name, summa, timestamp 
         FROM deals 
-        WHERE stage = ? AND date(timestamp) = ?
+        WHERE stage = ? AND (stat_date = ? OR date(timestamp) = ?)
         ORDER BY timestamp DESC
         """,
-        (stage, date)
+        (stage, date, date)
     )
     deals = [dict(row) for row in cursor.fetchall()]
     
