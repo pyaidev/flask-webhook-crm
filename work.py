@@ -7,6 +7,7 @@ import threading
 import time
 import urllib.parse
 import logging
+import pytz 
 
 # Настройка логирования
 logging.basicConfig(
@@ -58,10 +59,12 @@ db_lock = threading.Lock()
 def get_stat_date():
     """
     Возвращает дату для статистики с учетом правила:
-    - Если время с 00:00 до 21:00, возвращает текущую дату
-    - Если время с 21:01 до 23:59, возвращает следующую дату
+    - Если время с 00:00 до 21:00 МСК, возвращает текущую дату
+    - Если время с 21:01 до 23:59 МСК, возвращает следующую дату
     """
-    now = datetime.now()
+    # Устанавливаем московский часовой пояс
+    msk_tz = pytz.timezone('Europe/Moscow')
+    now = datetime.now(msk_tz)
     cutoff_time = now.replace(hour=21, minute=0, second=0, microsecond=0)
     
     # Если текущее время после 21:00, то используем следующую дату
@@ -96,6 +99,7 @@ def ensure_all_stages_in_db():
         
         conn.commit()
         conn.close()
+
 
 # Функция для проверки наличия и добавления столбца в таблицу
 def add_column_if_not_exists(conn, table, column, type):
@@ -190,7 +194,7 @@ def process_webhook(hook_id, name, summa_str):
     
     stage = HOOK_TO_STAGE.get(hook_id, "Неизвестно")
     
-    # Получаем дату для статистики с учетом времени
+    # Получаем дату для статистики с учетом времени (теперь по МСК)
     stat_date = get_stat_date()
     
     # Используем блокировку для предотвращения конфликтов при одновременных запросах
@@ -243,6 +247,30 @@ def process_webhook(hook_id, name, summa_str):
                 )
                 stat_id = cursor.lastrowid
                 logger.info(f"Inserted new daily stats with ID: {stat_id}")
+            
+            # Также обновляем стадию "Все сделки" для каждого действия
+            cursor.execute(
+                "SELECT id, count, total_summa FROM daily_stats WHERE date = ? AND stage = ?",
+                (stat_date, "Все сделки")
+            )
+            all_deals_result = cursor.fetchone()
+            
+            if all_deals_result:
+                # Обновляем существующую запись для "Все сделки"
+                all_stat_id, all_count, all_total_summa = all_deals_result
+                cursor.execute(
+                    "UPDATE daily_stats SET count = ?, total_summa = ? WHERE id = ?",
+                    (all_count + 1, all_total_summa + summa, all_stat_id)
+                )
+                logger.info(f"Updated 'Все сделки' stats ID: {all_stat_id}, new count: {all_count + 1}, new total: {all_total_summa + summa}")
+            else:
+                # Создаем новую запись для "Все сделки"
+                cursor.execute(
+                    "INSERT INTO daily_stats (date, stage, count, total_summa) VALUES (?, ?, ?, ?)",
+                    (stat_date, "Все сделки", 1, summa)
+                )
+                all_stat_id = cursor.lastrowid
+                logger.info(f"Inserted new 'Все сделки' stats with ID: {all_stat_id}")
             
             conn.commit()
         except Exception as e:

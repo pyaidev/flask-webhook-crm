@@ -18,6 +18,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const backToStatsBtn = document.getElementById('backToStats');
     const totalSumEl = document.getElementById('totalSum');
     const totalHooksEl = document.getElementById('totalHooks');
+    const confirmedSumEl = document.getElementById('confirmedSum'); // Новый элемент для суммы подтвержденных заказов
     const statsHeaderEl = document.querySelector('.stats-header h2');
     
     // Добавляем элементы для вывода процентов
@@ -42,6 +43,16 @@ document.addEventListener('DOMContentLoaded', function() {
         <div class="summary-formula">=(п.15+п.20+п.24)/п.7×100%</div>
     `;
     statsContainer.appendChild(missedPercentItem);
+    
+    // Создаем и добавляем элемент для отображения суммы подтвержденных заказов
+    const confirmedSumItem = document.createElement('div');
+    confirmedSumItem.className = 'summary-item';
+    confirmedSumItem.innerHTML = `
+        <div class="summary-title">Сумма подтв. заказов</div>
+        <div class="summary-value" id="confirmedSum">0 ₽</div>
+        <div class="summary-formula">=п.13+п.18+п.22</div>
+    `;
+    statsContainer.appendChild(confirmedSumItem);
     
     // Массив с названиями месяцев
     const months = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
@@ -271,6 +282,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Расчет итоговых значений
         let totalHooks = 0;
         let totalSum = 0;
+        let confirmedSum = 0; // Сумма подтвержденных заказов
         
         // Создаем объект для хранения данных по стадиям
         const stagesData = {};
@@ -289,12 +301,21 @@ document.addEventListener('DOMContentLoaded', function() {
                         total_summa: stage.total_summa || 0
                     };
                     
-                    // Суммируем для итогов
+                    // Сумма для "Все сделки" становится итоговой суммой
+                    if (stage.stage === "Все сделки") {
+                        totalSum = stage.total_summa || 0;
+                    }
+                    
+                    // Суммируем только для подсчета количества вебхуков
                     totalHooks += (stage.count || 0);
-                    totalSum += (stage.total_summa || 0);
                 }
             });
         }
+        
+        // Считаем сумму подтвержденных заказов
+        confirmedSum = (stagesData["Подтвердил заказ без предоплаты"].total_summa || 0) + 
+                      (stagesData["Подтвердил заказ с предоплатой"].total_summa || 0) + 
+                      (stagesData["Подтвердил заказ регион"].total_summa || 0);
         
         // Отображаем каждую стадию в заданном порядке
         stagesOrder.forEach((stageName, index) => {
@@ -326,6 +347,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Обновляем итоговые значения
         totalHooksEl.textContent = totalHooks;
         totalSumEl.textContent = totalSum.toLocaleString() + ' ₽';
+        document.getElementById('confirmedSum').textContent = confirmedSum.toLocaleString() + ' ₽';
         
         // Расчет процентов
         const allReadyCount = stagesData["Все готово"].count || 1; // Используем 1 для избежания деления на 0
@@ -387,14 +409,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     const dealEl = document.createElement('div');
                     dealEl.className = 'deal-item';
                     
-                    // Форматируем время
+                    // Форматируем время (теперь указываем, что это время MSK)
                     const dealTime = new Date(deal.timestamp);
                     const formattedTime = dealTime.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
                     
                     dealEl.innerHTML = `
                         <div class="deal-name">${deal.name}</div>
                         <div class="deal-sum">${deal.summa.toLocaleString()} ₽</div>
-                        <div class="deal-time">${formattedTime}</div>
+                        <div class="deal-time">${formattedTime} (МСК)</div>
                     `;
                     
                     dealsListEl.appendChild(dealEl);
