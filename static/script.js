@@ -2,6 +2,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Инициализация переменных
     let currentDate = new Date();
     let selectedStage = null;
+    let cachedStatsData = {}; // Кэш для хранения данных по датам
     
     // Получение элементов DOM
     const calendarEl = document.getElementById('calendar');
@@ -20,16 +21,6 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Добавляем элементы для вывода процентов
     const statsContainer = document.querySelector('.stats-summary');
-    
-    // Создаем и добавляем элементы для процентов подтверждений
-    // const confirmPercentItem = document.createElement('div');
-    // confirmPercentItem.className = 'summary-item';
-    // confirmPercentItem.innerHTML = `
-    //     <div class="summary-title">% подтверждений</div>
-    //     <div class="summary-value" id="confirmPercent">0%</div>
-    //     <div class="summary-formula">=(п.13+п.18+п.22)/п.7×100%</div>
-    // `;
-    // statsContainer.appendChild(confirmPercentItem);
     
     // Создаем и добавляем элементы для процентов отмен
     const cancelPercentItem = document.createElement('div');
@@ -204,96 +195,105 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Функция для загрузки статистики
     function loadStats(date) {
+        // Проверяем, есть ли данные для этой даты в кэше
+        if (cachedStatsData[date]) {
+            displayStats(cachedStatsData[date], date);
+            return;
+        }
+        
+        // Если данных нет в кэше, загружаем с сервера
         fetch(`/api/stats?date=${date}`)
             .then(response => response.json())
             .then(data => {
-                // Очищаем список стадий
-                stagesListEl.innerHTML = '';
+                // Сохраняем данные в кэш
+                cachedStatsData[date] = data;
                 
-                // Расчет итоговых значений
-                let totalHooks = 0;
-                let totalSum = 0;
-                
-                // Создаем объект для хранения данных по стадиям
-                const stagesData = {};
-                
-                // Заполняем объект стадий начальными нулевыми значениями
-                stagesOrder.forEach(stage => {
-                    stagesData[stage] = { count: 0, total_summa: 0 };
-                });
-                
-                // Заполняем данными из API
-                data.forEach(stage => {
-                    if (stagesData[stage.stage]) {
-                        stagesData[stage.stage] = {
-                            count: stage.count,
-                            total_summa: stage.total_summa
-                        };
-                    }
-                    
-                    // Суммируем для итогов
-                    totalHooks += stage.count;
-                    totalSum += stage.total_summa;
-                });
-                
-                // Отображаем каждую стадию в заданном порядке
-                stagesOrder.forEach((stageName, index) => {
-                    const stage = stagesData[stageName];
-                    const stageEl = document.createElement('div');
-                    stageEl.className = 'stage-item';
-                    stageEl.innerHTML = `
-                        <div class="stage-column">п.${index + 1}. ${stageName}</div>
-                        <div class="count-column">${stage.count}</div>
-                        <div class="sum-column">${stage.total_summa.toLocaleString()} ₽</div>
-                    `;
-                    
-                    // Добавляем обработчик клика для просмотра сделок по стадии
-                    stageEl.addEventListener('click', function() {
-                        selectedStage = stageName;
-                        selectedStageEl.textContent = selectedStage;
-                        
-                        // Загружаем сделки для выбранной стадии
-                        loadDeals(selectedStage, date);
-                        
-                        // Скрываем статистику и показываем контейнер со сделками
-                        statsContainerEl.style.display = 'none';
-                        dealsContainerEl.style.display = 'block';
-                    });
-                    
-                    stagesListEl.appendChild(stageEl);
-                });
-                
-                // Обновляем итоговые значения
-                totalHooksEl.textContent = totalHooks;
-                totalSumEl.textContent = totalSum.toLocaleString() + ' ₽';
-                
-                // Расчет процентов
-                const allReadyCount = stagesData["Все готово"].count || 1; // Используем 1 для избежания деления на 0
-                
-                // Процент подтверждений
-                const confirmCount = (stagesData["Подтвердил заказ без предоплаты"].count + 
-                                     stagesData["Подтвердил заказ с предоплатой"].count + 
-                                     stagesData["Подтвердил заказ регион"].count);
-                const confirmPercent = (confirmCount / allReadyCount) * 100;
-                document.getElementById('confirmPercent').textContent = confirmPercent.toFixed(2) + '%';
-                
-                // Процент отмен
-                const cancelCount = (stagesData["Отменил заказ без предоплаты"].count + 
-                                    stagesData["Отменил заказ с предоплатой"].count + 
-                                    stagesData["Отменил заказ регион"].count);
-                const cancelPercent = (cancelCount / allReadyCount) * 100;
-                document.getElementById('cancelPercent').textContent = cancelPercent.toFixed(2) + '%';
-                
-                // Процент недозвонов
-                const missedCount = (stagesData["Не взял трубку без предоплаты"].count + 
-                                    stagesData["Не взял трубку с предоплатой"].count + 
-                                    stagesData["Не взял трубку регион"].count);
-                const missedPercent = (missedCount / allReadyCount) * 100;
-                document.getElementById('missedPercent').textContent = missedPercent.toFixed(2) + '%';
+                // Отображаем данные
+                displayStats(data, date);
             })
             .catch(error => {
                 console.error('Ошибка при загрузке статистики:', error);
             });
+    }
+    
+    // Функция для отображения статистики из данных
+    function displayStats(data, date) {
+        // Очищаем список стадий
+        stagesListEl.innerHTML = '';
+        
+        // Расчет итоговых значений
+        let totalHooks = 0;
+        let totalSum = 0;
+        
+        // Создаем объект для хранения данных по стадиям
+        const stagesData = {};
+        
+        // Заполняем объект стадий начальными нулевыми значениями
+        stagesOrder.forEach(stage => {
+            stagesData[stage] = { count: 0, total_summa: 0 };
+        });
+        
+        // Заполняем данными из API
+        data.forEach(stage => {
+            if (stagesData[stage.stage]) {
+                stagesData[stage.stage] = {
+                    count: stage.count,
+                    total_summa: stage.total_summa
+                };
+            }
+            
+            // Суммируем для итогов
+            totalHooks += stage.count;
+            totalSum += stage.total_summa;
+        });
+        
+        // Отображаем каждую стадию в заданном порядке
+        stagesOrder.forEach((stageName, index) => {
+            const stage = stagesData[stageName];
+            const stageEl = document.createElement('div');
+            stageEl.className = 'stage-item';
+            stageEl.innerHTML = `
+                <div class="stage-column">п.${index + 1}. ${stageName}</div>
+                <div class="count-column">${stage.count}</div>
+                <div class="sum-column">${stage.total_summa.toLocaleString()} ₽</div>
+            `;
+            
+            // Добавляем обработчик клика для просмотра сделок по стадии
+            stageEl.addEventListener('click', function() {
+                selectedStage = stageName;
+                selectedStageEl.textContent = selectedStage;
+                
+                // Загружаем сделки для выбранной стадии
+                loadDeals(selectedStage, date);
+                
+                // Скрываем статистику и показываем контейнер со сделками
+                statsContainerEl.style.display = 'none';
+                dealsContainerEl.style.display = 'block';
+            });
+            
+            stagesListEl.appendChild(stageEl);
+        });
+        
+        // Обновляем итоговые значения
+        totalHooksEl.textContent = totalHooks;
+        totalSumEl.textContent = totalSum.toLocaleString() + ' ₽';
+        
+        // Расчет процентов
+        const allReadyCount = stagesData["Все готово"].count || 1; // Используем 1 для избежания деления на 0
+        
+        // Процент отмен
+        const cancelCount = (stagesData["Отменил заказ без предоплаты"].count + 
+                            stagesData["Отменил заказ с предоплатой"].count + 
+                            stagesData["Отменил заказ регион"].count);
+        const cancelPercent = (cancelCount / allReadyCount) * 100;
+        document.getElementById('cancelPercent').textContent = cancelPercent.toFixed(2) + '%';
+        
+        // Процент недозвонов
+        const missedCount = (stagesData["Не взял трубку без предоплаты"].count + 
+                            stagesData["Не взял трубку с предоплатой"].count + 
+                            stagesData["Не взял трубку регион"].count);
+        const missedPercent = (missedCount / allReadyCount) * 100;
+        document.getElementById('missedPercent').textContent = missedPercent.toFixed(2) + '%';
     }
     
     // Функция для загрузки сделок по стадии
