@@ -18,6 +18,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const backToStatsBtn = document.getElementById('backToStats');
     const totalSumEl = document.getElementById('totalSum');
     const totalHooksEl = document.getElementById('totalHooks');
+    const statsHeaderEl = document.querySelector('.stats-header h2');
     
     // Добавляем элементы для вывода процентов
     const statsContainer = document.querySelector('.stats-summary');
@@ -176,7 +177,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 );
                 
                 // Обновляем отображаемую дату
-                currentDateEl.textContent = formatDisplayDate(currentDate);
+                const formattedDate = formatDisplayDate(currentDate);
+                currentDateEl.textContent = formattedDate;
                 
                 // Загружаем данные для выбранной даты
                 loadStats(formatDate(currentDate));
@@ -203,7 +205,12 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Если данных нет в кэше, загружаем с сервера
         fetch(`/api/stats?date=${date}`)
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            })
             .then(data => {
                 // Сохраняем данные в кэш
                 cachedStatsData[date] = data;
@@ -213,6 +220,8 @@ document.addEventListener('DOMContentLoaded', function() {
             })
             .catch(error => {
                 console.error('Ошибка при загрузке статистики:', error);
+                // Отображаем пустые данные при ошибке
+                displayStats([], date);
             });
     }
     
@@ -220,6 +229,10 @@ document.addEventListener('DOMContentLoaded', function() {
     function displayStats(data, date) {
         // Очищаем список стадий
         stagesListEl.innerHTML = '';
+        
+        // Обновляем заголовок статистики с выбранной датой
+        const displayDate = formatDisplayDate(new Date(date));
+        currentDateEl.textContent = displayDate;
         
         // Расчет итоговых значений
         let totalHooks = 0;
@@ -237,14 +250,14 @@ document.addEventListener('DOMContentLoaded', function() {
         data.forEach(stage => {
             if (stagesData[stage.stage]) {
                 stagesData[stage.stage] = {
-                    count: stage.count,
-                    total_summa: stage.total_summa
+                    count: stage.count || 0,
+                    total_summa: stage.total_summa || 0
                 };
             }
             
             // Суммируем для итогов
-            totalHooks += stage.count;
-            totalSum += stage.total_summa;
+            totalHooks += (stage.count || 0);
+            totalSum += (stage.total_summa || 0);
         });
         
         // Отображаем каждую стадию в заданном порядке
@@ -299,13 +312,18 @@ document.addEventListener('DOMContentLoaded', function() {
     // Функция для загрузки сделок по стадии
     function loadDeals(stage, date) {
         fetch(`/api/deals/${encodeURIComponent(stage)}?date=${date}`)
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            })
             .then(data => {
                 // Очищаем список сделок
                 dealsListEl.innerHTML = '';
                 
                 // Если нет данных, показываем сообщение
-                if (data.length === 0) {
+                if (!data || data.length === 0) {
                     const noDataEl = document.createElement('div');
                     noDataEl.className = 'deal-item';
                     noDataEl.innerHTML = '<div class="deal-name">Нет сделок для выбранной стадии</div><div class="deal-sum">-</div><div class="deal-time">-</div>';
@@ -332,6 +350,8 @@ document.addEventListener('DOMContentLoaded', function() {
             })
             .catch(error => {
                 console.error('Ошибка при загрузке сделок:', error);
+                // Показываем сообщение об ошибке
+                dealsListEl.innerHTML = '<div class="deal-item error">Ошибка загрузки данных</div>';
             });
     }
     
@@ -346,11 +366,21 @@ document.addEventListener('DOMContentLoaded', function() {
     prevMonthBtn.addEventListener('click', function() {
         currentDate.setMonth(currentDate.getMonth() - 1);
         renderCalendar(currentDate);
+        // Загружаем статистику для первого дня отображаемого месяца
+        const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+        currentDate = firstDayOfMonth;
+        loadStats(formatDate(firstDayOfMonth));
+        currentDateEl.textContent = formatDisplayDate(firstDayOfMonth);
     });
     
     nextMonthBtn.addEventListener('click', function() {
         currentDate.setMonth(currentDate.getMonth() + 1);
         renderCalendar(currentDate);
+        // Загружаем статистику для первого дня отображаемого месяца
+        const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+        currentDate = firstDayOfMonth;
+        loadStats(formatDate(firstDayOfMonth));
+        currentDateEl.textContent = formatDisplayDate(firstDayOfMonth);
     });
     
     // Инициализация

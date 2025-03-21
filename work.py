@@ -323,36 +323,55 @@ def index():
     return render_template('index.html')
 
 # API для получения статистики по всем стадиям
+# Replace the API endpoint for getting stats with this fixed version
+
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
-    date = request.args.get('date')
-    
-    if not date:
-        # Если дата не указана, используем текущую дату
-        date = datetime.now().strftime('%Y-%m-%d')
-    
-    conn = sqlite3.connect('webhooks.db')
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    
-    # Получаем статистику за выбранную дату
-    cursor.execute(
-        "SELECT stage, count, total_summa FROM daily_stats WHERE date = ? ORDER BY stage",
-        (date,)
-    )
-    stats = [dict(row) for row in cursor.fetchall()]
-    
-    # Проверяем, есть ли записи для всех стадий, если нет - добавляем их с нулевыми значениями
-    existing_stages = {stat['stage'] for stat in stats}
-    
-    # Добавляем отсутствующие стадии с нулевыми значениями
-    for stage_id, stage_name in HOOK_TO_STAGE.items():
-        if stage_name not in existing_stages:
-            stats.append({'stage': stage_name, 'count': 0, 'total_summa': 0})
-    
-    conn.close()
-    
-    return jsonify(stats)
+    try:
+        # Get date parameter from request
+        date = request.args.get('date')
+        
+        logger.info(f"Stats requested for date: {date}")
+        
+        if not date:
+            # If date not provided, use current date
+            date = datetime.now().strftime('%Y-%m-%d')
+            logger.info(f"No date provided, using current date: {date}")
+        
+        conn = sqlite3.connect('webhooks.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Get statistics for the selected date
+        cursor.execute(
+            "SELECT stage, count, total_summa FROM daily_stats WHERE date = ? ORDER BY stage",
+            (date,)
+        )
+        stats = [dict(row) for row in cursor.fetchall()]
+        
+        logger.info(f"Found {len(stats)} stats records for date {date}")
+        
+        # Check if we have entries for all stages, if not - add them with zero values
+        existing_stages = {stat['stage'] for stat in stats}
+        
+        # Add missing stages with zero values
+        for stage_id, stage_name in HOOK_TO_STAGE.items():
+            if stage_name not in existing_stages:
+                stats.append({'stage': stage_name, 'count': 0, 'total_summa': 0})
+        
+        conn.close()
+        
+        # Set explicit headers to prevent caching
+        response = jsonify(stats)
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error in get_stats: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 # API для получения сделок по стадии
 @app.route('/api/deals/<stage>', methods=['GET'])
