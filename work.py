@@ -22,7 +22,7 @@ app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)  # Разрешаем кросс-доменные запросы
 logger = app.logger
 
-# Словарь для маппинга номера хука на стадию - перемещаем объявление вверх!
+# Словарь для маппинга номера хука на стадию
 HOOK_TO_STAGE = {
     1: "Все сделки",
     2: "Без статуса",
@@ -97,10 +97,25 @@ def ensure_all_stages_in_db():
         conn.commit()
         conn.close()
 
+# Функция для проверки наличия и добавления столбца в таблицу
+def add_column_if_not_exists(conn, table, column, type):
+    cursor = conn.cursor()
+    cursor.execute(f"PRAGMA table_info({table})")
+    columns = [info[1] for info in cursor.fetchall()]
+    
+    if column not in columns:
+        logger.info(f"Adding column {column} to table {table}")
+        cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {type}")
+        conn.commit()
+        return True
+    return False
+
 # Инициализация базы данных
 def init_db():
     conn = sqlite3.connect('webhooks.db')
     cursor = conn.cursor()
+    
+    # Создаем основные таблицы, если они не существуют
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS deals (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -108,8 +123,7 @@ def init_db():
         name TEXT,
         summa REAL,
         stage TEXT,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-        stat_date TEXT
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     )
     ''')
     
@@ -123,6 +137,9 @@ def init_db():
         total_summa REAL
     )
     ''')
+    
+    # Добавляем столбец stat_date, если его нет
+    add_column_if_not_exists(conn, "deals", "stat_date", "TEXT")
     
     conn.commit()
     conn.close()
@@ -184,40 +201,59 @@ def process_webhook(hook_id, name, summa_str):
         conn = sqlite3.connect('webhooks.db')
         cursor = conn.cursor()
         
-        # Сохраняем информацию о сделке с датой статистики
-        cursor.execute(
-            "INSERT INTO deals (hook_id, name, summa, stage, stat_date) VALUES (?, ?, ?, ?, ?)",
-            (hook_id, name, summa, stage, stat_date)
-        )
-        deal_id = cursor.lastrowid
-        logger.info(f"Inserted deal with ID: {deal_id}, stat_date: {stat_date}")
-        
-        # Проверяем, есть ли уже запись для этой стадии на эту дату
-        cursor.execute(
-            "SELECT id, count, total_summa FROM daily_stats WHERE date = ? AND stage = ?",
-            (stat_date, stage)
-        )
-        result = cursor.fetchone()
-        
-        if result:
-            # Обновляем существующую запись
-            stat_id, count, total_summa = result
+        try:
+            # Проверяем наличие столбца stat_date
+            try:
+                # Сохраняем информацию о сделке с датой статистики
+                cursor.execute(
+                    "INSERT INTO deals (hook_id, name, summa, stage, stat_date) VALUES (?, ?, ?, ?, ?)",
+                    (hook_id, name, summa, stage, stat_date)
+                )
+            except sqlite3.OperationalError as e:
+                if "no column named stat_date" in str(e):
+                    # Добавляем столбец и повторяем вставку
+                    add_column_if_not_exists(conn, "deals", "stat_date", "TEXT")
+                    cursor.execute(
+                        "INSERT INTO deals (hook_id, name, summa, stage, stat_date) VALUES (?, ?, ?, ?, ?)",
+                        (hook_id, name, summa, stage, stat_date)
+                    )
+                else:
+                    raise e
+            
+            deal_id = cursor.lastrowid
+            logger.info(f"Inserted deal with ID: {deal_id}, stat_date: {stat_date}")
+            
+            # Проверяем, есть ли уже запись для этой стадии на эту дату
             cursor.execute(
-                "UPDATE daily_stats SET count = ?, total_summa = ? WHERE id = ?",
-                (count + 1, total_summa + summa, stat_id)
+                "SELECT id, count, total_summa FROM daily_stats WHERE date = ? AND stage = ?",
+                (stat_date, stage)
             )
-            logger.info(f"Updated daily stats ID: {stat_id}, new count: {count + 1}, new total: {total_summa + summa}")
-        else:
-            # Создаем новую запись
-            cursor.execute(
-                "INSERT INTO daily_stats (date, stage, count, total_summa) VALUES (?, ?, ?, ?)",
-                (stat_date, stage, 1, summa)
-            )
-            stat_id = cursor.lastrowid
-            logger.info(f"Inserted new daily stats with ID: {stat_id}")
-        
-        conn.commit()
-        conn.close()
+            result = cursor.fetchone()
+            
+            if result:
+                # Обновляем существующую запись
+                stat_id, count, total_summa = result
+                cursor.execute(
+                    "UPDATE daily_stats SET count = ?, total_summa = ? WHERE id = ?",
+                    (count + 1, total_summa + summa, stat_id)
+                )
+                logger.info(f"Updated daily stats ID: {stat_id}, new count: {count + 1}, new total: {total_summa + summa}")
+            else:
+                # Создаем новую запись
+                cursor.execute(
+                    "INSERT INTO daily_stats (date, stage, count, total_summa) VALUES (?, ?, ?, ?)",
+                    (stat_date, stage, 1, summa)
+                )
+                stat_id = cursor.lastrowid
+                logger.info(f"Inserted new daily stats with ID: {stat_id}")
+            
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Database error: {str(e)}")
+            raise e
+        finally:
+            conn.close()
     
     return jsonify({
         "status": "success", 
@@ -323,13 +359,15 @@ def index():
     return render_template('index.html')
 
 # API для получения статистики по всем стадиям
-# Replace the API endpoint for getting stats with this fixed version
-
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
     try:
         # Get date parameter from request
         date = request.args.get('date')
+        
+        # Очистка cache buster если он есть
+        if date and '&' in date:
+            date = date.split('&')[0]
         
         logger.info(f"Stats requested for date: {date}")
         
@@ -376,32 +414,66 @@ def get_stats():
 # API для получения сделок по стадии
 @app.route('/api/deals/<stage>', methods=['GET'])
 def get_deals_by_stage(stage):
-    date = request.args.get('date')
-    
-    if not date:
-        # Если дата не указана, используем текущую дату
-        date = datetime.now().strftime('%Y-%m-%d')
-    
-    conn = sqlite3.connect('webhooks.db')
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    
-    # Получаем сделки по стадии и дате
-    # Учитываем как поле stat_date, так и timestamp для обратной совместимости
-    cursor.execute(
-        """
-        SELECT id, name, summa, timestamp 
-        FROM deals 
-        WHERE stage = ? AND (stat_date = ? OR date(timestamp) = ?)
-        ORDER BY timestamp DESC
-        """,
-        (stage, date, date)
-    )
-    deals = [dict(row) for row in cursor.fetchall()]
-    
-    conn.close()
-    
-    return jsonify(deals)
+    try:
+        date = request.args.get('date')
+        
+        # Очистка cache buster если он есть
+        if date and '&' in date:
+            date = date.split('&')[0]
+        
+        if not date:
+            # Если дата не указана, используем текущую дату
+            date = datetime.now().strftime('%Y-%m-%d')
+        
+        logger.info(f"Deals requested for stage: {stage}, date: {date}")
+        
+        conn = sqlite3.connect('webhooks.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Проверяем наличие столбца stat_date
+        cursor.execute("PRAGMA table_info(deals)")
+        columns = [info[1] for info in cursor.fetchall()]
+        
+        if "stat_date" in columns:
+            # Если столбец есть, используем его
+            cursor.execute(
+                """
+                SELECT id, name, summa, timestamp 
+                FROM deals 
+                WHERE stage = ? AND (stat_date = ? OR date(timestamp) = ?)
+                ORDER BY timestamp DESC
+                """,
+                (stage, date, date)
+            )
+        else:
+            # Если столбца нет, используем только timestamp
+            cursor.execute(
+                """
+                SELECT id, name, summa, timestamp 
+                FROM deals 
+                WHERE stage = ? AND date(timestamp) = ?
+                ORDER BY timestamp DESC
+                """,
+                (stage, date)
+            )
+        
+        deals = [dict(row) for row in cursor.fetchall()]
+        logger.info(f"Found {len(deals)} deals for stage {stage} on date {date}")
+        
+        conn.close()
+        
+        # Set explicit headers to prevent caching
+        response = jsonify(deals)
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error in get_deals_by_stage: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 # API для получения доступных дат, для которых есть статистика
 @app.route('/api/dates', methods=['GET'])
