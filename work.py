@@ -145,22 +145,19 @@ def init_db():
     conn.close()
 
 # Функция для проверки и исправления шаблонных значений
+import re
+
 def clean_template_values(name, summa_str):
-    # Список шаблонных значений для имени
-    name_templates = ["{{Название}}", "{=Document:TITLE}", "{{название}}", 
-                     "{=Document:NAME}", "{=Document:deal_name}"]
-    
-    # Список шаблонных значений для суммы
-    summa_templates = ["{{Сумма}}", "{=Document:OPPORTUNITY}", "{{сумма}}", 
-                       "{=Document:PRICE}", "{=Document:deal_sum}"]
+    # Шаблон регулярного выражения для обнаружения любых шаблонных значений
+    template_pattern = re.compile(r'(\{\{.*|{=.*)')
     
     # Проверяем имя
-    if name in name_templates or not name:
+    if not name or template_pattern.match(name):
         logger.warning(f"Received template value for name: {name}")
         name = "Сделка без названия"
     
     # Проверяем сумму
-    if summa_str in summa_templates or not summa_str:
+    if not summa_str or template_pattern.match(summa_str):
         logger.warning(f"Received template value for summa: {summa_str}")
         summa_str = "0"
     
