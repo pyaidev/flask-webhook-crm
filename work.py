@@ -227,6 +227,7 @@ def handle_webhook_get(hook_id):
 def index():
     return render_template('index.html')
 
+
 # API для получения статистики по всем стадиям
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
@@ -284,6 +285,11 @@ def get_available_dates():
     conn.close()
     
     return jsonify(dates)
+
+
+@app.route('/robots.txt')
+def robots():
+    return app.send_static_file('robots.txt')
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5001, threaded=True)
