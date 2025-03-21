@@ -5,9 +5,22 @@ import json
 from datetime import datetime
 import threading
 import time
+import urllib.parse
+import logging
+
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("webhook.log"),
+        logging.StreamHandler()
+    ]
+)
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)  # Разрешаем кросс-доменные запросы
+logger = app.logger
 
 # Инициализация базы данных
 def init_db():
@@ -72,15 +85,51 @@ HOOK_TO_STAGE = {
 # Мьютекс для защиты доступа к базе данных при одновременных запросах
 db_lock = threading.Lock()
 
+# Функция для проверки и исправления шаблонных значений
+def clean_template_values(name, summa_str):
+    # Список шаблонных значений для имени
+    name_templates = ["{{Название}}", "{=Document:TITLE}", "{{название}}", 
+                     "{=Document:NAME}", "{=Document:deal_name}"]
+    
+    # Список шаблонных значений для суммы
+    summa_templates = ["{{Сумма}}", "{=Document:OPPORTUNITY}", "{{сумма}}", 
+                       "{=Document:PRICE}", "{=Document:deal_sum}"]
+    
+    # Проверяем имя
+    if name in name_templates or not name:
+        logger.warning(f"Received template value for name: {name}")
+        name = "Сделка без названия"
+    
+    # Проверяем сумму
+    if summa_str in summa_templates or not summa_str:
+        logger.warning(f"Received template value for summa: {summa_str}")
+        summa_str = "0"
+    
+    # Декодируем URL-encoded значения
+    try:
+        name = urllib.parse.unquote(name)
+    except:
+        pass
+    
+    return name, summa_str
+
 # Общая функция обработки веб-хука (для обоих методов GET и POST)
 def process_webhook(hook_id, name, summa_str):
     if hook_id < 1 or hook_id > 25:
         return jsonify({"status": "error", "message": "Invalid hook ID"}), 400
     
+    # Очищаем от шаблонных значений
+    name, summa_str = clean_template_values(name, summa_str)
+    
+    # Логируем обработанные данные
+    logger.info(f"Processing webhook {hook_id} - Name: {name}, Summa: {summa_str}")
+    
     # Преобразование суммы в число
     try:
-        summa = float(str(summa_str).replace(' ', '').replace(',', '.'))
+        summa_str = str(summa_str).replace(' ', '').replace(',', '.')
+        summa = float(summa_str)
     except ValueError:
+        logger.error(f"Could not convert summa to float: {summa_str}")
         summa = 0
     
     stage = HOOK_TO_STAGE.get(hook_id, "Неизвестно")
@@ -95,6 +144,8 @@ def process_webhook(hook_id, name, summa_str):
             "INSERT INTO deals (hook_id, name, summa, stage) VALUES (?, ?, ?, ?)",
             (hook_id, name, summa, stage)
         )
+        deal_id = cursor.lastrowid
+        logger.info(f"Inserted deal with ID: {deal_id}")
         
         # Обновляем ежедневную статистику
         today = datetime.now().strftime('%Y-%m-%d')
@@ -113,12 +164,15 @@ def process_webhook(hook_id, name, summa_str):
                 "UPDATE daily_stats SET count = ?, total_summa = ? WHERE id = ?",
                 (count + 1, total_summa + summa, stat_id)
             )
+            logger.info(f"Updated daily stats ID: {stat_id}, new count: {count + 1}, new total: {total_summa + summa}")
         else:
             # Создаем новую запись
             cursor.execute(
                 "INSERT INTO daily_stats (date, stage, count, total_summa) VALUES (?, ?, ?, ?)",
                 (today, stage, 1, summa)
             )
+            stat_id = cursor.lastrowid
+            logger.info(f"Inserted new daily stats with ID: {stat_id}")
         
         conn.commit()
         conn.close()
@@ -136,6 +190,10 @@ def process_webhook(hook_id, name, summa_str):
 # Обработчик для GET запросов с параметрами в URL
 @app.route('/hook<int:hook_id>/', methods=['GET'])
 def handle_webhook_get(hook_id):
+    logger.info(f"GET request received for hook {hook_id}")
+    logger.info(f"URL: {request.url}")
+    logger.info(f"Args: {request.args}")
+    
     name = request.args.get('name', '')
     summa_str = request.args.get('summa', '0')
     return process_webhook(hook_id, name, summa_str)
@@ -147,10 +205,10 @@ def handle_webhook_post(hook_id):
     content_type = request.headers.get('Content-Type', '')
     
     # Логирование для отладки
-    app.logger.info(f"POST request received for hook {hook_id}")
-    app.logger.info(f"Content-Type: {content_type}")
-    app.logger.info(f"URL: {request.url}")
-    app.logger.info(f"Args: {request.args}")
+    logger.info(f"POST request received for hook {hook_id}")
+    logger.info(f"Content-Type: {content_type}")
+    logger.info(f"URL: {request.url}")
+    logger.info(f"Args: {request.args}")
     
     try:
         # Получаем аргументы из URL
@@ -162,33 +220,37 @@ def handle_webhook_post(hook_id):
             if 'application/json' in content_type:
                 # Если данные пришли в формате JSON
                 data = request.json
+                logger.info(f"JSON data: {data}")
                 name = data.get('name', '')
                 summa_str = data.get('summa', '0')
             elif 'application/x-www-form-urlencoded' in content_type:
                 # Если данные пришли в формате form-data
+                logger.info(f"Form data: {request.form}")
                 name = request.form.get('name', '')
                 summa_str = request.form.get('summa', '0')
             else:
                 # Пробуем получить данные из тела запроса напрямую
                 try:
-                    data = json.loads(request.data)
+                    request_data = request.data.decode('utf-8')
+                    logger.info(f"Raw request data: {request_data}")
+                    data = json.loads(request_data)
                     name = data.get('name', '')
                     summa_str = data.get('summa', '0')
-                except:
-                    app.logger.info("Failed to parse JSON from request body")
+                except Exception as e:
+                    logger.error(f"Failed to parse JSON from request body: {str(e)}")
         
-        app.logger.info(f"Extracted name: {name}, summa: {summa_str}")
+        logger.info(f"Extracted name: {name}, summa: {summa_str}")
         return process_webhook(hook_id, name, summa_str)
     
     except Exception as e:
-        app.logger.error(f"Error processing POST webhook: {str(e)}")
+        logger.error(f"Error processing POST webhook: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 # Обработчик для запросов вида /hook1/name=XXX&summa=YYY (без вопросительного знака)
 @app.route('/hook<int:hook_id>/<path:params>', methods=['GET', 'POST'])
 def handle_webhook_with_params_in_path(hook_id, params):
-    app.logger.info(f"Request with params in path received for hook {hook_id}")
-    app.logger.info(f"Params: {params}")
+    logger.info(f"Request with params in path received for hook {hook_id}")
+    logger.info(f"Params: {params}")
     
     # Преобразуем параметры из пути в словарь
     params_dict = {}
@@ -201,13 +263,13 @@ def handle_webhook_with_params_in_path(hook_id, params):
                 key, value = pair.split('=', 1)
                 params_dict[key] = value
     except Exception as e:
-        app.logger.error(f"Error parsing params: {e}")
+        logger.error(f"Error parsing params: {e}")
     
     # Получаем параметры
     name = params_dict.get('name', '')
     summa_str = params_dict.get('summa', '0')
     
-    app.logger.info(f"Extracted from path: name={name}, summa={summa_str}")
+    logger.info(f"Extracted from path: name={name}, summa={summa_str}")
     
     # Обрабатываем данные
     return process_webhook(hook_id, name, summa_str)
@@ -274,6 +336,11 @@ def get_available_dates():
     conn.close()
     
     return jsonify(dates)
+
+# Маршрут для проверки работоспособности
+@app.route('/health')
+def health_check():
+    return jsonify({"status": "ok", "timestamp": datetime.now().isoformat()})
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5001, threaded=True)
