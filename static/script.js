@@ -22,14 +22,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const statsContainer = document.querySelector('.stats-summary');
     
     // Создаем и добавляем элементы для процентов подтверждений
-    const confirmPercentItem = document.createElement('div');
-    confirmPercentItem.className = 'summary-item';
-    confirmPercentItem.innerHTML = `
-        <div class="summary-title">% подтверждений</div>
-        <div class="summary-value" id="confirmPercent">0%</div>
-        <div class="summary-formula">=(п.13+п.18+п.22)/п.7×100%</div>
-    `;
-    statsContainer.appendChild(confirmPercentItem);
+    // const confirmPercentItem = document.createElement('div');
+    // confirmPercentItem.className = 'summary-item';
+    // confirmPercentItem.innerHTML = `
+    //     <div class="summary-title">% подтверждений</div>
+    //     <div class="summary-value" id="confirmPercent">0%</div>
+    //     <div class="summary-formula">=(п.13+п.18+п.22)/п.7×100%</div>
+    // `;
+    // statsContainer.appendChild(confirmPercentItem);
     
     // Создаем и добавляем элементы для процентов отмен
     const cancelPercentItem = document.createElement('div');
