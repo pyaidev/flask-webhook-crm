@@ -355,6 +355,53 @@
             font-weight: bold;
             margin-left: 5px;
         }
+
+        /* Стили для временного фильтра */
+        .time-filter-container {
+            margin-top: 20px;
+        }
+        
+        .time-filter-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .filter-option {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        
+        .time-input {
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .time-range-inputs {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: 5px;
+        }
+        
+        .current-filter-info {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        /* Стили для активного фильтра времени */
+        .time-filter-active {
+            background-color: #e8f5e9;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            border-left: 4px solid #5cb85c;
+        }
     </style>
 </head>
 <body>
@@ -398,6 +445,47 @@
                 <strong>Статистика собирается для:</strong><br>
                 <span id="processingDate">{{ processing_date }}</span>
             </div>
+
+            <!-- Временной фильтр -->
+            <div class="time-filter-container">
+                <h2 class="section-title">Временной фильтр</h2>
+                <div class="time-filter-controls">
+                    <div class="filter-option">
+                        <input type="radio" id="fullDay" name="timeFilterType" value="fullDay" checked>
+                        <label for="fullDay">Полный день</label>
+                    </div>
+                    <div class="filter-option">
+                        <input type="radio" id="specificTime" name="timeFilterType" value="specificTime">
+                        <label for="specificTime">На определенное время</label>
+                        <input type="time" id="specificTimeValue" class="time-input" disabled>
+                    </div>
+                    <div class="filter-option">
+                        <input type="radio" id="timeRange" name="timeFilterType" value="timeRange">
+                        <label for="timeRange">Временной диапазон</label>
+                        <div class="time-range-inputs">
+                            <input type="time" id="timeFrom" class="time-input" disabled>
+                            <span>до</span>
+                            <input type="time" id="timeTo" class="time-input" disabled>
+                        </div>
+                    </div>
+                    <button id="applyTimeFilter" class="update-btn">Применить</button>
+                </div>
+                
+                <!-- Текущий фильтр -->
+                {% if time_point or (time_from and time_to) %}
+                <div class="time-filter-active">
+                    {% if time_point %}
+                        <strong>Активный фильтр:</strong> Данные на {{ time_point }}
+                    {% elif time_from and time_to %}
+                        <strong>Активный фильтр:</strong> Данные с {{ time_from }} до {{ time_to }}
+                    {% endif %}
+                </div>
+                {% else %}
+                <div class="current-filter-info">
+                    <span id="currentTimeFilter">Показаны данные за весь день</span>
+                </div>
+                {% endif %}
+            </div>
         </div>
         
         <div class="box main-content">
@@ -428,8 +516,23 @@
                     </div>
                     <div class="kpi-formula">=п.13+п.18+п.22</div>
                 </div>
+                
+                <div class="kpi-card">
+                    <div class="kpi-title">Кол-во отмен</div>
+                    <div class="kpi-value" id="cancellationCount">
+                        {{ kpis.cancellation_count }}
+                    </div>
+                    <div class="kpi-formula">=п.14+п.19+п.23</div>
+                </div>
+                
+                <div class="kpi-card">
+                    <div class="kpi-title">Кол-во недозвонов</div>
+                    <div class="kpi-value" id="missedCallsCount">
+                        {{ kpis.missed_calls_count }}
+                    </div>
+                    <div class="kpi-formula">=п.15+п.20+п.24</div>
+                </div>
             </div>
-            
             <h2 class="section-title">Сумма итог: {{ stats.total_sum if stats.total_sum else 0 }}</h2>
             <h3 class="section-title" style="margin-top: 10px;">Вебхуков итог: {{ stats.total_count }}</h3>
             
@@ -499,6 +602,7 @@
             <table class="webhook-table">
                 <thead>
                     <tr>
+                        <th>Наименование</th>
                         <th>Название</th>
                         <th>Время (МСК)</th>
                         <th>Сумма</th>
@@ -507,15 +611,16 @@
                 <tbody>
                     {% for webhook in recent_webhooks %}
                     <tr>
-                        <td>{{ webhook[1] or 'Без названия' }}</td>
+                        <td>{{ webhook[1] }}</td>
+                        <td>{{ webhook[2] or 'Без названия' }}</td>
                         <td>{{ webhook[3] }}</td>
-                        <td>{{ webhook[2] or 0 }}</td>
+                        <td>{{ webhook[4] or 0 }}</td>
                     </tr>
                     {% endfor %}
                     
                     {% if recent_webhooks|length == 0 %}
                     <tr>
-                        <td colspan="3" class="grayed-text">Нет полученных вебхуков</td>
+                        <td colspan="4" class="grayed-text">Нет полученных вебхуков</td>
                     </tr>
                     {% endif %}
                 </tbody>
@@ -542,6 +647,9 @@
         // Get the current URL parameters
         const urlParams = new URLSearchParams(window.location.search);
         const selectedDateParam = urlParams.get('date');
+        const timePoint = urlParams.get('timePoint');
+        const timeFrom = urlParams.get('timeFrom');
+        const timeTo = urlParams.get('timeTo');
         
         // Moscow Time Clock
         function updateMoscowTime() {
@@ -698,8 +806,18 @@
                 }
             });
             
+            // Сохраняем параметры времени, если они есть
+            let url = `/?date=${dateStr}`;
+            
+            // Добавляем существующие параметры времени, если они есть
+            if (timePoint) {
+                url += `&timePoint=${timePoint}`;
+            } else if (timeFrom && timeTo) {
+                url += `&timeFrom=${timeFrom}&timeTo=${timeTo}`;
+            }
+            
             // Refresh page with the new date
-            window.location.href = `/?date=${dateStr}`;
+            window.location.href = url;
         }
         
         // Open modal with webhook details
@@ -724,120 +842,222 @@
             addFilterTag('type', hookId);
             
             // Fetch webhook details from API
-            fetch(`/api/webhooks?date=${currentViewDate}&hook_type=hook${hookId}_count`)
-                .then(response => response.json())
-                .then(data => {
-                    // Hide loader
-                    document.getElementById('modalLoader').style.display = 'none';
-                    
-                    // Populate content
-                    renderWebhookTable(data.webhooks);
-                })
-                .catch(error => {
-                    document.getElementById('modalLoader').style.display = 'none';
-                    document.getElementById('modalContent').innerHTML = `<p>Ошибка загрузки данных: ${error}</p>`;
-                });
+            let apiUrl = `/api/webhooks?date=${currentViewDate}&hook_type=hook${hookId}_count`;
             
-            // Show modal
-            document.getElementById('webhookModal').style.display = 'block';
-        }
-        
-        // Render webhook table in modal
-        function renderWebhookTable(webhooks) {
-            if (!webhooks || webhooks.length === 0) {
-                document.getElementById('modalContent').innerHTML = '<p>Нет данных для отображения</p>';
-                return;
+            // Добавляем параметры времени, если они есть
+            if (timePoint) {
+                apiUrl += `&timePoint=${timePoint}`;
+            } else if (timeFrom && timeTo) {
+                apiUrl += `&timeFrom=${timeFrom}&timeTo=${timeTo}`;
             }
             
-            let tableHTML = `
-                <table class="filtered-table">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Название</th>
-                            <th>Сумма</th>
-                            <th>Время получения (МСК)</th>
-                            <th>Данные</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-            `;
-            
-            webhooks.forEach(webhook => {
-                tableHTML += `
-                    <tr>
-                        <td>${webhook.id}</td>
-                        <td>${webhook.name || 'Без названия'}</td>
-                        <td>${webhook.summa || 0}</td>
-                        <td>${webhook.received_at}</td>
-                        <td><button onclick="showRawData('${encodeURIComponent(webhook.raw_data)}')">Просмотр</button></td>
-                    </tr>
-                `;
-            });
-            
-            tableHTML += `
-                    </tbody>
-                </table>
-            `;
-            
-            document.getElementById('modalContent').innerHTML = tableHTML;
-        }
-        
-        // Show raw webhook data
-        function showRawData(encodedData) {
-            const rawData = decodeURIComponent(encodedData);
-            alert(rawData);
-        }
-        
-        // Add filter tag 
-        function addFilterTag(type, value) {
-            const filterContainer = document.getElementById('activeFilters');
-            const displayValue = type === 'type' ? `Тип: ${value}` : `Дата: ${value}`;
-            
-            const tagElement = document.createElement('div');
-            tagElement.className = 'filter-tag';
-            tagElement.innerHTML = `
-                ${displayValue}
-                <span class="remove" onclick="removeFilter('${type}')">&times;</span>
-            `;
-            
-            filterContainer.appendChild(tagElement);
-        }
-        
-        // Remove filter
-        function removeFilter(type) {
-            if (type === 'date') {
-                // Reset to processing date
-                currentViewDate = "{{ processing_date }}";
+            fetch(apiUrl)
+            .then(response => response.json())
+            .then(data => {
+                // Hide loader
+                document.getElementById('modalLoader').style.display = 'none';
                 
-                // If we have a hook type selected, refresh the view
-                if (currentHookType) {
-                    showWebhookDetails(currentHookType, document.querySelector(`.webhook-type[data-hook-id="${currentHookType}"] .webhook-type-title`).textContent.substr(3));
+                // Populate content
+                renderWebhookTable(data.webhooks);
+            })
+            .catch(error => {
+                document.getElementById('modalLoader').style.display = 'none';
+                document.getElementById('modalContent').innerHTML = `<p>Ошибка загрузки данных: ${error}</p>`;
+            });
+        
+        // Show modal
+        document.getElementById('webhookModal').style.display = 'block';
+    }
+    
+    // Render webhook table in modal
+    function renderWebhookTable(webhooks) {
+        if (!webhooks || webhooks.length === 0) {
+            document.getElementById('modalContent').innerHTML = '<p>Нет данных для отображения</p>';
+            return;
+        }
+        
+        let tableHTML = `
+            <table class="filtered-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Название</th>
+                        <th>Сумма</th>
+                        <th>Время получения (МСК)</th>
+                        <th>Данные</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+        
+        webhooks.forEach(webhook => {
+            tableHTML += `
+                <tr>
+                    <td>${webhook.id}</td>
+                    <td>${webhook.name || 'Без названия'}</td>
+                    <td>${webhook.summa || 0}</td>
+                    <td>${webhook.received_at}</td>
+                    <td><button onclick="showRawData('${encodeURIComponent(webhook.raw_data)}')">Просмотр</button></td>
+                </tr>
+            `;
+        });
+        
+        tableHTML += `
+                </tbody>
+            </table>
+        `;
+        
+        document.getElementById('modalContent').innerHTML = tableHTML;
+    }
+    
+    // Show raw webhook data
+    function showRawData(encodedData) {
+        const rawData = decodeURIComponent(encodedData);
+        alert(rawData);
+    }
+    
+    // Add filter tag 
+    function addFilterTag(type, value) {
+        const filterContainer = document.getElementById('activeFilters');
+        const displayValue = type === 'type' ? `Тип: ${value}` : `Дата: ${value}`;
+        
+        const tagElement = document.createElement('div');
+        tagElement.className = 'filter-tag';
+        tagElement.innerHTML = `
+            ${displayValue}
+            <span class="remove" onclick="removeFilter('${type}')">&times;</span>
+        `;
+        
+        filterContainer.appendChild(tagElement);
+    }
+    
+    // Remove filter
+    function removeFilter(type) {
+        if (type === 'date') {
+            // Reset to processing date
+            currentViewDate = "{{ processing_date }}";
+            
+            // If we have a hook type selected, refresh the view
+            if (currentHookType) {
+                showWebhookDetails(currentHookType, document.querySelector(`.webhook-type[data-hook-id="${currentHookType}"] .webhook-type-title`).textContent.substr(3));
+            }
+        } else if (type === 'type') {
+            // Close the modal
+            closeModal();
+        }
+    }
+    
+    // Close modal
+    function closeModal() {
+        document.getElementById('webhookModal').style.display = 'none';
+        currentHookType = null;
+    }
+    
+    // Close modal when clicking outside the content
+    window.onclick = function(event) {
+        const modal = document.getElementById('webhookModal');
+        if (event.target === modal) {
+            closeModal();
+        }
+    };
+    
+    // Инициализация временного фильтра
+    function initTimeFilter() {
+        // Получаем элементы управления фильтром
+        const filterTypeRadios = document.querySelectorAll('input[name="timeFilterType"]');
+        const specificTimeInput = document.getElementById('specificTimeValue');
+        const timeFromInput = document.getElementById('timeFrom');
+        const timeToInput = document.getElementById('timeTo');
+        const applyButton = document.getElementById('applyTimeFilter');
+        
+        // Устанавливаем обработчики для переключения типа фильтра
+        filterTypeRadios.forEach(radio => {
+            radio.addEventListener('change', function() {
+                // Отключаем все поля ввода времени
+                specificTimeInput.disabled = true;
+                timeFromInput.disabled = true;
+                timeToInput.disabled = true;
+                
+                // Включаем нужные поля в зависимости от выбора
+                if (this.value === 'specificTime') {
+                    specificTimeInput.disabled = false;
+                } else if (this.value === 'timeRange') {
+                    timeFromInput.disabled = false;
+                    timeToInput.disabled = false;
                 }
-            } else if (type === 'type') {
-                // Close the modal
-                closeModal();
+            });
+        });
+        
+        // Устанавливаем текущее время в поля ввода по умолчанию
+        const now = new Date();
+        const currentHour = now.getHours().toString().padStart(2, '0');
+        const currentMinute = now.getMinutes().toString().padStart(2, '0');
+        const currentTime = `${currentHour}:${currentMinute}`;
+        
+        specificTimeInput.value = currentTime;
+        timeFromInput.value = '00:00';
+        timeToInput.value = currentTime;
+        
+        // Обработчик кнопки применения фильтра
+        applyButton.addEventListener('click', applyTimeFilter);
+        
+        // Проверяем наличие параметров времени в URL и устанавливаем соответствующие значения
+        if (timePoint) {
+            document.getElementById('specificTime').checked = true;
+            document.getElementById('specificTimeValue').disabled = false;
+            document.getElementById('specificTimeValue').value = timePoint;
+            document.getElementById('currentTimeFilter').textContent = `Показаны данные на ${timePoint}`;
+        } else if (timeFrom && timeTo) {
+            document.getElementById('timeRange').checked = true;
+            document.getElementById('timeFrom').disabled = false;
+            document.getElementById('timeTo').disabled = false;
+            document.getElementById('timeFrom').value = timeFrom;
+            document.getElementById('timeTo').value = timeTo;
+            document.getElementById('currentTimeFilter').textContent = `Показаны данные с ${timeFrom} до ${timeTo}`;
+        }
+    }
+    
+    // Применение временного фильтра
+    function applyTimeFilter() {
+        // Определяем выбранный тип фильтра
+        const selectedFilter = document.querySelector('input[name="timeFilterType"]:checked').value;
+        
+        // Получаем текущую дату из URL или используем текущую дату обработки
+        let dateParam = selectedDateParam;
+        if (!dateParam) {
+            dateParam = document.getElementById('processingDate').textContent;
+        }
+        
+        // Формируем URL с параметрами фильтра
+        let url = `/?date=${dateParam}`;
+        
+        // Добавляем параметры в зависимости от типа фильтра
+        if (selectedFilter === 'specificTime') {
+            const specificTime = document.getElementById('specificTimeValue').value;
+            if (specificTime) {
+                url += `&timePoint=${specificTime}`;
+            }
+        } else if (selectedFilter === 'timeRange') {
+            const timeFrom = document.getElementById('timeFrom').value;
+            const timeTo = document.getElementById('timeTo').value;
+            if (timeFrom && timeTo) {
+                url += `&timeFrom=${timeFrom}&timeTo=${timeTo}`;
             }
         }
         
-        // Close modal
-        function closeModal() {
-            document.getElementById('webhookModal').style.display = 'none';
-            currentHookType = null;
-        }
-        
-        // Close modal when clicking outside the content
-        window.onclick = function(event) {
-            const modal = document.getElementById('webhookModal');
-            if (event.target === modal) {
-                closeModal();
-            }
-        };
-        
-        // Auto-refresh every minute
-        setInterval(function() {
-            location.reload();
-        }, 60000);
-    </script>
+        // Переходим на страницу с новыми параметрами
+        window.location.href = url;
+    }
+    
+    // Инициализируем временной фильтр при загрузке страницы
+    document.addEventListener('DOMContentLoaded', function() {
+        initTimeFilter();
+    });
+    
+    // Auto-refresh every minute
+    setInterval(function() {
+        location.reload();
+    }, 60000);
+</script>
 </body>
 </html>
