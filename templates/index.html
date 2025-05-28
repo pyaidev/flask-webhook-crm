@@ -543,7 +543,7 @@
                     <div class="stats-col-sum">Сумма</div>
                 </div>
                 
-                {% for i in range(1, 26) %}
+                {% for i in range(1, 27) %}
                 <div class="stats-row">
                     <div class="stats-col-stage">Стадия {{ i }}</div>
                     <div class="stats-col-count">{{ stats['hook' ~ i ~ '_count'] or 0 }}</div>
@@ -583,10 +583,11 @@
                     22: "Подтвердил заказ регион",
                     23: "Отменил заказ регион",
                     24: "Не взял трубку регион",
-                    25: "неопонятно"
+                    25: "неопонятно",
+                    26: "автоответчик"
                 } %}
                 
-                {% for i in range(1, 26) %}
+                {% for i in range(1, 27) %}
                 <div class="webhook-type" data-hook-id="{{ i }}" onclick="showWebhookDetails({{ i }}, '{{ webhook_types[i] }}')">
                     <div class="webhook-type-title">{{ i }}. {{ webhook_types[i] }}</div>
                     <div>Количество: <span class="webhook-count">{{ stats['hook' ~ i ~ '_count'] or 0 }}</span></div>

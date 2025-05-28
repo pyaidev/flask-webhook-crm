@@ -1,0 +1,14 @@
+bind = "127.0.0.1:8000"
+workers = 4
+worker_class = "sync"
+worker_connections = 1000
+max_requests = 1000
+max_requests_jitter = 100
+timeout = 30
+keepalive = 2
+preload_app = True
+user = "www-data"
+group = "www-data"
+errorlog = "/var/www/web/gunicorn_error.log"
+accesslog = "/var/www/web/gunicorn_access.log"
+loglevel = "info"

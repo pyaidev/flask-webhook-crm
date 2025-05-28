@@ -58,7 +58,7 @@ def init_db():
         cursor.execute("ALTER TABLE webhooks ADD COLUMN received_at_moscow TEXT")
         logger.info("Added received_at_moscow column to webhooks table")
 
-    # Table for storing daily statistics with sum columns
+    # Table for storing daily statistics with sum columns (теперь до 26)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS daily_stats (
         date TEXT PRIMARY KEY,
@@ -87,6 +87,7 @@ def init_db():
         hook23_count INTEGER DEFAULT 0,
         hook24_count INTEGER DEFAULT 0,
         hook25_count INTEGER DEFAULT 0,
+        hook26_count INTEGER DEFAULT 0,
         total_count INTEGER DEFAULT 0,
         hook1_sum INTEGER DEFAULT 0,
         hook2_sum INTEGER DEFAULT 0,
@@ -113,12 +114,13 @@ def init_db():
         hook23_sum INTEGER DEFAULT 0,
         hook24_sum INTEGER DEFAULT 0,
         hook25_sum INTEGER DEFAULT 0,
+        hook26_sum INTEGER DEFAULT 0,
         total_sum INTEGER DEFAULT 0
     )
     ''')
 
-    # Make sure all columns exist
-    for i in range(1, 26):
+    # Make sure all columns exist (теперь до 26)
+    for i in range(1, 27):  # Изменено с 26 на 27
         # Check and add count columns if they don't exist
         count_col = f"hook{i}_count"
         try:
@@ -300,6 +302,7 @@ def save_webhook(hook_type, name, summa, raw_data):
         if 'conn' in locals() and conn:
             conn.close()
         return False
+
     
 @app.route('/check-permissions')
 def check_permissions():
@@ -432,7 +435,7 @@ def get_stats_for_date(date):
         # Verify total count matches sum of individual counts
         total_count = 0
         total_sum = 0
-        for i in range(1, 26):
+        for i in range(1, 27):  # Изменено с 26 на 27
             count_key = f"hook{i}_count"
             sum_key = f"hook{i}_sum"
             if count_key in stats_dict:
@@ -467,7 +470,7 @@ def get_stats_for_date(date):
 def calculate_kpis(stats_dict):
     """Calculate KPIs based on daily statistics"""
     # Ensure all hook counts exist to avoid None values
-    for i in range(1, 26):
+    for i in range(1, 27):  # Изменено с 26 на 27
         key = f"hook{i}_count"
         sum_key = f"hook{i}_sum"
         if key not in stats_dict or stats_dict[key] is None:
@@ -633,9 +636,9 @@ def calculate_stats_for_time_filter(date, time_point=None, time_from=None, time_
             limit=10000  # Увеличиваем лимит, чтобы получить все вебхуки за день
         )
         
-        # Initialize stats dictionary with zeros
-        stats_dict = {f"hook{i}_count": 0 for i in range(1, 26)}
-        stats_dict.update({f"hook{i}_sum": 0 for i in range(1, 26)})
+        # Initialize stats dictionary with zeros (теперь до 26)
+        stats_dict = {f"hook{i}_count": 0 for i in range(1, 27)}  # Изменено с 26 на 27
+        stats_dict.update({f"hook{i}_sum": 0 for i in range(1, 27)})  # Изменено с 26 на 27
         stats_dict['total_count'] = 0
         stats_dict['total_sum'] = 0
         
@@ -744,7 +747,7 @@ def handle_webhook(hook_num, path):
     logger.info(f"Hook number: {hook_num}")
     logger.info(f"Path parameter: {path}")
     
-    if hook_num < 1 or hook_num > 25:
+    if hook_num < 1 or hook_num > 26:  # Изменено с 25 на 26
         return jsonify({"error": "Invalid webhook number"}), 400
 
     hook_type = f"hook{hook_num}_count"
@@ -819,48 +822,6 @@ def handle_webhook(hook_num, path):
         logger.error(f"Error processing webhook: {str(e)}")
         logger.error(traceback.format_exc())
         return jsonify({"status": "error", "message": str(e)}), 500
-# Create routes for each webhook type
-# Replace your current handle_webhook function with this:
-# @app.route('/hook<int:hook_num>/<path:path>', methods=['GET', 'POST'])
-# def handle_webhook(hook_num, path):
-#     """Generic handler for all webhook types"""
-#     if hook_num < 1 or hook_num > 25:
-#         return jsonify({"error": "Invalid webhook number"}), 400
-
-#     hook_type = f"hook{hook_num}_count"
-
-#     # Get parameters
-#     if request.method == 'GET':
-#         name = request.args.get('name', '')
-#         summa = request.args.get('summa', '')
-#         raw_data = str(dict(request.args))
-#     else:  # POST
-#         if request.is_json:
-#             data = request.get_json()
-#             name = data.get('name', '')
-#             summa = data.get('summa', '')
-#             raw_data = str(data)
-#         else:
-#             name = request.form.get('name', '')
-#             summa = request.form.get('summa', '')
-#             raw_data = str(dict(request.form))
-
-#     logger.info(f"Webhook received: {hook_type}, {name}, {summa}")
-    
-#     # Process immediately instead of queuing
-#     try:
-#         logger.info(f"Processing webhook directly: {hook_type}, {name}, {summa}")
-#         success = save_webhook(hook_type, name, summa, raw_data)
-#         if success:
-#             logger.info(f"Successfully processed webhook: {hook_type}")
-#             return jsonify({"status": "processed"}), 200
-#         else:
-#             logger.error(f"Failed to process webhook: {hook_type}")
-#             return jsonify({"status": "failed"}), 500
-#     except Exception as e:
-#         logger.error(f"Error processing webhook: {str(e)}")
-#         logger.error(traceback.format_exc())
-#         return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @app.route('/')
@@ -896,7 +857,7 @@ def index():
             logger.info(f"Using full day statistics")
 
         # For template compatibility, ensure all hook counts and sums exist
-        for i in range(1, 26):
+        for i in range(1, 27):  # Изменено с 26 на 27
             count_key = f"hook{i}_count"
             sum_key = f"hook{i}_sum"
             if count_key not in stats_dict or stats_dict[count_key] is None:
@@ -916,7 +877,7 @@ def index():
             limit=50
         )
         
-        # Define webhook stage names
+        # Define webhook stage names (добавлен 26-й пункт)
         webhook_types = {
             "hook1_count": "1. Все сделки",
             "hook2_count": "2. Без статуса",
@@ -942,7 +903,8 @@ def index():
             "hook22_count": "22. Подтвердил заказ регион",
             "hook23_count": "23. Отменил заказ регион",
             "hook24_count": "24. Не взял трубку регион",
-            "hook25_count": "25. неопонятно"
+            "hook25_count": "25. неопонятно",
+            "hook26_count": "26. автоответчик"  # Новый 26-й пункт
         }
         
         # Add stage name to each webhook
@@ -1037,9 +999,9 @@ def generate_test_data():
             "Клиент Иванов"
         ]
 
-        # Generate 25 webhooks, one for each type
+        # Generate 26 webhooks, one for each type (теперь до 26)
         import random
-        for i in range(1, 26):
+        for i in range(1, 27):  # Изменено с 26 на 27
             hook_type = f"hook{i}_count"
             name = random.choice(deal_names)
             summa = str(random.randint(5000, 50000))
@@ -1052,7 +1014,7 @@ def generate_test_data():
                 'raw_data': f"{{'name': '{name}', 'summa': '{summa}'}}"
             })
 
-        logger.info(f"Generated 25 test webhooks")
+        logger.info(f"Generated 26 test webhooks")  # Изменено с 25 на 26
         return redirect(url_for('index'))
     except Exception as e:
         logger.error(f"Error generating test data: {str(e)}")
