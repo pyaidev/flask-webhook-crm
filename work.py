@@ -58,7 +58,7 @@ def init_db():
         cursor.execute("ALTER TABLE webhooks ADD COLUMN received_at_moscow TEXT")
         logger.info("Added received_at_moscow column to webhooks table")
 
-    # Table for storing daily statistics with sum columns (теперь до 26)
+    # Table for storing daily statistics with sum columns (теперь до 34)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS daily_stats (
         date TEXT PRIMARY KEY,
@@ -88,6 +88,14 @@ def init_db():
         hook24_count INTEGER DEFAULT 0,
         hook25_count INTEGER DEFAULT 0,
         hook26_count INTEGER DEFAULT 0,
+        hook27_count INTEGER DEFAULT 0,
+        hook28_count INTEGER DEFAULT 0,
+        hook29_count INTEGER DEFAULT 0,
+        hook30_count INTEGER DEFAULT 0,
+        hook31_count INTEGER DEFAULT 0,
+        hook32_count INTEGER DEFAULT 0,
+        hook33_count INTEGER DEFAULT 0,
+        hook34_count INTEGER DEFAULT 0,
         total_count INTEGER DEFAULT 0,
         hook1_sum INTEGER DEFAULT 0,
         hook2_sum INTEGER DEFAULT 0,
@@ -115,12 +123,21 @@ def init_db():
         hook24_sum INTEGER DEFAULT 0,
         hook25_sum INTEGER DEFAULT 0,
         hook26_sum INTEGER DEFAULT 0,
-        total_sum INTEGER DEFAULT 0
+        hook27_sum INTEGER DEFAULT 0,
+        hook28_sum INTEGER DEFAULT 0,
+        hook29_sum INTEGER DEFAULT 0,
+        hook30_sum INTEGER DEFAULT 0,
+        hook31_sum INTEGER DEFAULT 0,
+        hook32_sum INTEGER DEFAULT 0,
+        hook33_sum INTEGER DEFAULT 0,
+        hook34_sum INTEGER DEFAULT 0,
+        total_sum INTEGER DEFAULT 0,
+        website_confirmations_sum INTEGER DEFAULT 0
     )
     ''')
 
-    # Make sure all columns exist (теперь до 26)
-    for i in range(1, 27):  # Изменено с 26 на 27
+    # Make sure all columns exist (теперь до 34)
+    for i in range(1, 35):  # Изменено с 27 на 35
         # Check and add count columns if they don't exist
         count_col = f"hook{i}_count"
         try:
@@ -149,6 +166,13 @@ def init_db():
     except sqlite3.OperationalError:
         cursor.execute("ALTER TABLE daily_stats ADD COLUMN total_sum INTEGER DEFAULT 0")
         logger.info("Added total_sum column to daily_stats table")
+
+    # Add website confirmations sum column if it doesn't exist
+    try:
+        cursor.execute("SELECT website_confirmations_sum FROM daily_stats LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE daily_stats ADD COLUMN website_confirmations_sum INTEGER DEFAULT 0")
+        logger.info("Added website_confirmations_sum column to daily_stats table")
 
     conn.commit()
     conn.close()
@@ -270,8 +294,24 @@ def save_webhook(hook_type, name, summa, raw_data):
                 total_sum = COALESCE(total_sum, 0) + ? 
             WHERE date = ?
         """
-        logger.info(f"Executing update query: {update_query} with values ({summa_int}, {summa_int}, {processing_date})")
-        cursor.execute(update_query, (summa_int, summa_int, processing_date))
+        
+        # Check if this is one of the website confirmation hooks (31-34)
+        if hook_num in [31, 32, 33, 34]:
+            update_query = f"""
+                UPDATE daily_stats 
+                SET {hook_type} = COALESCE({hook_type}, 0) + 1, 
+                    total_count = COALESCE(total_count, 0) + 1, 
+                    {sum_column} = COALESCE({sum_column}, 0) + ?, 
+                    total_sum = COALESCE(total_sum, 0) + ?,
+                    website_confirmations_sum = COALESCE(website_confirmations_sum, 0) + ?
+                WHERE date = ?
+            """
+            logger.info(f"Executing update query with website confirmations: {update_query} with values ({summa_int}, {summa_int}, {summa_int}, {processing_date})")
+            cursor.execute(update_query, (summa_int, summa_int, summa_int, processing_date))
+        else:
+            logger.info(f"Executing update query: {update_query} with values ({summa_int}, {summa_int}, {processing_date})")
+            cursor.execute(update_query, (summa_int, summa_int, processing_date))
+        
         logger.info("Updated daily stats")
 
         conn.commit()
@@ -358,12 +398,20 @@ def check_permissions():
 def webhook_processor():
     """Background thread function to process webhooks from the queue"""
     logger.info("Webhook processor thread started")
+    empty_queue_count = 0
+    
     while True:
         try:
-            logger.info(f"Queue size: {webhook_queue.qsize()}")  # Add this line
+            # Only log queue size occasionally to reduce log spam
+            if empty_queue_count % 10 == 0:
+                logger.info(f"Queue size: {webhook_queue.qsize()}")
+            
             webhook_data = webhook_queue.get(timeout=5)  # 5 second timeout
             if webhook_data is None:  # Poison pill to stop the thread
                 break
+
+            # Reset empty queue counter when we get data
+            empty_queue_count = 0
 
             hook_type = webhook_data.get('hook_type')
             name = webhook_data.get('name')
@@ -396,10 +444,18 @@ def webhook_processor():
             time_module.sleep(0.1)
 
         except Exception as e:
-            # If timeout or other error, just continue
-            if "Empty" not in str(e):  # Don't log queue.Empty exceptions
+            # Handle queue.Empty exception gracefully
+            if "Empty" in str(type(e).__name__) or "queue.Empty" in str(type(e).__name__):
+                empty_queue_count += 1
+                # Only log occasionally when queue is consistently empty
+                if empty_queue_count % 20 == 0:
+                    logger.debug(f"Queue empty, waiting... (count: {empty_queue_count})")
+                # Sleep longer when queue is empty to reduce CPU usage
+                time_module.sleep(2)
+            else:
                 logger.error(f"Webhook processor exception: {str(e)}")
                 logger.error(traceback.format_exc())
+                time_module.sleep(1)
             continue
 
 def get_stats_for_date(date):
@@ -435,28 +491,38 @@ def get_stats_for_date(date):
         # Verify total count matches sum of individual counts
         total_count = 0
         total_sum = 0
-        for i in range(1, 27):  # Изменено с 26 на 27
+        website_confirmations_sum = 0
+        
+        for i in range(1, 35):  # Изменено с 27 на 35
             count_key = f"hook{i}_count"
             sum_key = f"hook{i}_sum"
             if count_key in stats_dict:
                 total_count += stats_dict[count_key]
             if sum_key in stats_dict:
                 total_sum += stats_dict[sum_key]
+            
+            # Calculate website confirmations sum for hooks 31-34
+            if i in [31, 32, 33, 34] and sum_key in stats_dict:
+                website_confirmations_sum += stats_dict[sum_key]
         
         # Log verification results
         logger.info(f"Calculated total count: {total_count}, DB total count: {stats_dict.get('total_count', 0)}")
         logger.info(f"Calculated total sum: {total_sum}, DB total sum: {stats_dict.get('total_sum', 0)}")
+        logger.info(f"Calculated website confirmations sum: {website_confirmations_sum}, DB website confirmations sum: {stats_dict.get('website_confirmations_sum', 0)}")
         
         # Update totals if they don't match
-        if total_count != stats_dict.get('total_count', 0) or total_sum != stats_dict.get('total_sum', 0):
+        if (total_count != stats_dict.get('total_count', 0) or 
+            total_sum != stats_dict.get('total_sum', 0) or 
+            website_confirmations_sum != stats_dict.get('website_confirmations_sum', 0)):
             logger.info(f"Updating totals in database to match calculated values")
             cursor.execute(
-                "UPDATE daily_stats SET total_count = ?, total_sum = ? WHERE date = ?",
-                (total_count, total_sum, date)
+                "UPDATE daily_stats SET total_count = ?, total_sum = ?, website_confirmations_sum = ? WHERE date = ?",
+                (total_count, total_sum, website_confirmations_sum, date)
             )
             conn.commit()
             stats_dict['total_count'] = total_count
             stats_dict['total_sum'] = total_sum
+            stats_dict['website_confirmations_sum'] = website_confirmations_sum
 
         conn.close()
         return stats_dict
@@ -470,7 +536,7 @@ def get_stats_for_date(date):
 def calculate_kpis(stats_dict):
     """Calculate KPIs based on daily statistics"""
     # Ensure all hook counts exist to avoid None values
-    for i in range(1, 27):  # Изменено с 26 на 27
+    for i in range(1, 35):  # Изменено с 27 на 35
         key = f"hook{i}_count"
         sum_key = f"hook{i}_sum"
         if key not in stats_dict or stats_dict[key] is None:
@@ -509,13 +575,17 @@ def calculate_kpis(stats_dict):
             stats_dict.get('hook22_sum', 0)
     )
 
+    # Calculate website confirmations sum (p.31 + p.32 + p.33 + p.34)
+    website_confirmations_sum = stats_dict.get('website_confirmations_sum', 0)
+
     # Return KPIs
     return {
         'cancellation_rate': cancellation_rate,
         'missed_calls_rate': missed_calls_rate,
         'confirmed_orders_sum': confirmed_orders_sum,
         'cancellation_count': cancellation_count,   # Абсолютное число отмен
-        'missed_calls_count': missed_calls_count    # Абсолютное число недозвонов
+        'missed_calls_count': missed_calls_count,    # Абсолютное число недозвонов
+        'website_confirmations_sum': website_confirmations_sum  # Новая сумма по вебсайт подтверждениям
     }
     
 def parse_time(time_str):
@@ -636,11 +706,12 @@ def calculate_stats_for_time_filter(date, time_point=None, time_from=None, time_
             limit=10000  # Увеличиваем лимит, чтобы получить все вебхуки за день
         )
         
-        # Initialize stats dictionary with zeros (теперь до 26)
-        stats_dict = {f"hook{i}_count": 0 for i in range(1, 27)}  # Изменено с 26 на 27
-        stats_dict.update({f"hook{i}_sum": 0 for i in range(1, 27)})  # Изменено с 26 на 27
+        # Initialize stats dictionary with zeros (теперь до 34)
+        stats_dict = {f"hook{i}_count": 0 for i in range(1, 35)}  # Изменено с 27 на 35
+        stats_dict.update({f"hook{i}_sum": 0 for i in range(1, 35)})  # Изменено с 27 на 35
         stats_dict['total_count'] = 0
         stats_dict['total_sum'] = 0
+        stats_dict['website_confirmations_sum'] = 0
         
         # Count webhooks by type and sum values
         for webhook in webhooks:
@@ -673,6 +744,11 @@ def calculate_stats_for_time_filter(date, time_point=None, time_from=None, time_
                         
                         stats_dict[sum_key] = stats_dict.get(sum_key, 0) + summa_int
                         stats_dict['total_sum'] += summa_int
+                        
+                        # Add to website confirmations sum if it's hooks 31-34
+                        if hook_num in [31, 32, 33, 34]:
+                            stats_dict['website_confirmations_sum'] += summa_int
+                            
                     except (ValueError, TypeError):
                         # If conversion fails, don't add to sum
                         pass
@@ -747,7 +823,7 @@ def handle_webhook(hook_num, path):
     logger.info(f"Hook number: {hook_num}")
     logger.info(f"Path parameter: {path}")
     
-    if hook_num < 1 or hook_num > 26:  # Изменено с 25 на 26
+    if hook_num < 1 or hook_num > 34:  # Изменено с 26 на 34
         return jsonify({"error": "Invalid webhook number"}), 400
 
     hook_type = f"hook{hook_num}_count"
@@ -811,7 +887,23 @@ def handle_webhook(hook_num, path):
     # Process webhook
     try:
         logger.info(f"Processing webhook: {hook_type}, {name}, {summa}")
-        success = save_webhook(hook_type, name, summa, raw_data)
+        
+        # For hooks 31-34, we can process directly for faster response
+        # but also add to queue for backup processing
+        if hook_num in [31, 32, 33, 34]:
+            logger.info(f"Processing website confirmation webhook directly: {hook_type}")
+            success = save_webhook(hook_type, name, summa, raw_data)
+        else:
+            # For other hooks, use the queue
+            webhook_queue.put({
+                'hook_type': hook_type,
+                'name': name,
+                'summa': summa,
+                'raw_data': raw_data
+            })
+            success = True
+            logger.info(f"Added webhook to queue: {hook_type}")
+        
         if success:
             logger.info(f"Successfully processed webhook: {hook_type}")
             return jsonify({"status": "processed"}), 200
@@ -857,7 +949,7 @@ def index():
             logger.info(f"Using full day statistics")
 
         # For template compatibility, ensure all hook counts and sums exist
-        for i in range(1, 27):  # Изменено с 26 на 27
+        for i in range(1, 35):  # Изменено с 27 на 35
             count_key = f"hook{i}_count"
             sum_key = f"hook{i}_sum"
             if count_key not in stats_dict or stats_dict[count_key] is None:
@@ -877,7 +969,7 @@ def index():
             limit=50
         )
         
-        # Define webhook stage names (добавлен 26-й пункт)
+        # Define webhook stage names (добавлены 31-34 пункты)
         webhook_types = {
             "hook1_count": "1. Все сделки",
             "hook2_count": "2. Без статуса",
@@ -904,7 +996,15 @@ def index():
             "hook23_count": "23. Отменил заказ регион",
             "hook24_count": "24. Не взял трубку регион",
             "hook25_count": "25. неопонятно",
-            "hook26_count": "26. автоответчик"  # Новый 26-й пункт
+            "hook26_count": "26. автоответчик",
+            "hook27_count": "27. Резерв",
+            "hook28_count": "28. Резерв",
+            "hook29_count": "29. Резерв",
+            "hook30_count": "30. Резерв",
+            "hook31_count": "31. Подтвердил на сайте с предоплатой",
+            "hook32_count": "32. Не подтвердил на сайте с предоплатой",
+            "hook33_count": "33. Подтвердил на сайте без предоплаты",
+            "hook34_count": "34. Не подтвердил на сайте без предоплаты"
         }
         
         # Add stage name to each webhook
@@ -999,9 +1099,9 @@ def generate_test_data():
             "Клиент Иванов"
         ]
 
-        # Generate 26 webhooks, one for each type (теперь до 26)
+        # Generate 34 webhooks, one for each type (теперь до 34)
         import random
-        for i in range(1, 27):  # Изменено с 26 на 27
+        for i in range(1, 35):  # Изменено с 27 на 35
             hook_type = f"hook{i}_count"
             name = random.choice(deal_names)
             summa = str(random.randint(5000, 50000))
@@ -1014,7 +1114,7 @@ def generate_test_data():
                 'raw_data': f"{{'name': '{name}', 'summa': '{summa}'}}"
             })
 
-        logger.info(f"Generated 26 test webhooks")  # Изменено с 25 на 26
+        logger.info(f"Generated 34 test webhooks")  # Изменено с 26 на 34
         return redirect(url_for('index'))
     except Exception as e:
         logger.error(f"Error generating test data: {str(e)}")
@@ -1089,6 +1189,9 @@ def debug():
         <h2>Current Moscow Time</h2>
         <p>{get_moscow_now().strftime('%Y-%m-%d %H:%M:%S (%Z)')}</p>
         <p>Processing date: {get_processing_date()}</p>
+        
+        <h2>Website Confirmations KPI</h2>
+        <p>This will show the sum of hooks 31-34 (website confirmations)</p>
         """
 
         return debug_info

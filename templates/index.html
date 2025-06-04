@@ -298,7 +298,7 @@
         /* KPI Cards */
         .kpi-container {
             display: flex;
-            gap: 20px;
+            gap: 15px;
             margin-bottom: 20px;
             flex-wrap: wrap;
         }
@@ -309,24 +309,38 @@
             padding: 20px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             flex: 1;
-            min-width: 200px;
+            min-width: 180px;
         }
         
         .kpi-title {
-            font-size: 16px;
+            font-size: 14px;
             color: #666;
-            margin-bottom: 15px;
+            margin-bottom: 12px;
         }
         
         .kpi-value {
-            font-size: 32px;
+            font-size: 28px;
             font-weight: bold;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
         }
         
         .kpi-formula {
-            font-size: 12px;
+            font-size: 11px;
             color: #888;
+        }
+        
+        /* Новая карточка для подтверждений на сайте */
+        .kpi-card.website-confirmations {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .kpi-card.website-confirmations .kpi-title {
+            color: #e8f0ff;
+        }
+        
+        .kpi-card.website-confirmations .kpi-formula {
+            color: #d0deff;
         }
         
         .period-info {
@@ -401,6 +415,13 @@
             border-radius: 4px;
             margin-top: 10px;
             border-left: 4px solid #5cb85c;
+        }
+
+        /* Секция для новых вебхуков */
+        .website-webhooks-section {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 2px solid #667eea;
         }
     </style>
 </head>
@@ -517,6 +538,14 @@
                     <div class="kpi-formula">=п.13+п.18+п.22</div>
                 </div>
                 
+                <div class="kpi-card website-confirmations">
+                    <div class="kpi-title">Подтверждения на сайте</div>
+                    <div class="kpi-value" id="websiteConfirmationsSum">
+                        {{ kpis.website_confirmations_sum }},00 ₽
+                    </div>
+                    <div class="kpi-formula">=п.31+п.32+п.33+п.34</div>
+                </div>
+                
                 <div class="kpi-card">
                     <div class="kpi-title">Кол-во отмен</div>
                     <div class="kpi-value" id="cancellationCount">
@@ -543,7 +572,7 @@
                     <div class="stats-col-sum">Сумма</div>
                 </div>
                 
-                {% for i in range(1, 27) %}
+                {% for i in range(1, 35) %}
                 <div class="stats-row">
                     <div class="stats-col-stage">Стадия {{ i }}</div>
                     <div class="stats-col-count">{{ stats['hook' ~ i ~ '_count'] or 0 }}</div>
@@ -584,15 +613,37 @@
                     23: "Отменил заказ регион",
                     24: "Не взял трубку регион",
                     25: "неопонятно",
-                    26: "автоответчик"
+                    26: "автоответчик",
+                    27: "Резерв",
+                    28: "Резерв",
+                    29: "Резерв",
+                    30: "Резерв",
+                    31: "Подтвердил на сайте с предоплатой",
+                    32: "Не подтвердил на сайте с предоплатой",
+                    33: "Подтвердил на сайте без предоплаты",
+                    34: "Не подтвердил на сайте без предоплаты"
                 } %}
                 
-                {% for i in range(1, 27) %}
+                {% for i in range(1, 31) %}
                 <div class="webhook-type" data-hook-id="{{ i }}" onclick="showWebhookDetails({{ i }}, '{{ webhook_types[i] }}')">
                     <div class="webhook-type-title">{{ i }}. {{ webhook_types[i] }}</div>
                     <div>Количество: <span class="webhook-count">{{ stats['hook' ~ i ~ '_count'] or 0 }}</span></div>
                 </div>
                 {% endfor %}
+            </div>
+            
+            <!-- Отдельная секция для новых вебхуков сайта -->
+            <div class="website-webhooks-section">
+                <h3 class="section-title" style="color: #667eea;">🌐 Подтверждения на сайте</h3>
+                <div class="webhook-types">
+                    {% for i in range(31, 35) %}
+                    <div class="webhook-type" data-hook-id="{{ i }}" onclick="showWebhookDetails({{ i }}, '{{ webhook_types[i] }}')">
+                        <div class="webhook-type-title">{{ i }}. {{ webhook_types[i] }}</div>
+                        <div>Количество: <span class="webhook-count">{{ stats['hook' ~ i ~ '_count'] or 0 }}</span></div>
+                        <div style="color: #667eea; font-weight: bold;">Сумма: {{ stats['hook' ~ i ~ '_sum'] or 0 }} ₽</div>
+                    </div>
+                    {% endfor %}
+                </div>
             </div>
         </div>
     </div>
