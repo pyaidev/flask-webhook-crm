@@ -329,7 +329,7 @@
             color: #888;
         }
         
-        /* Новая карточка для подтверждений на сайте */
+        /* Карточки для разных типов подтверждений */
         .kpi-card.website-confirmations {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
@@ -341,6 +341,32 @@
         
         .kpi-card.website-confirmations .kpi-formula {
             color: #d0deff;
+        }
+        
+        .kpi-card.whatsapp-night {
+            background: linear-gradient(135deg, #434343 0%, #000000 100%);
+            color: white;
+        }
+        
+        .kpi-card.whatsapp-night .kpi-title {
+            color: #e8e8e8;
+        }
+        
+        .kpi-card.whatsapp-night .kpi-formula {
+            color: #cccccc;
+        }
+        
+        .kpi-card.whatsapp-work {
+            background: linear-gradient(135deg, #25d366 0%, #128c7e 100%);
+            color: white;
+        }
+        
+        .kpi-card.whatsapp-work .kpi-title {
+            color: #e8f5e8;
+        }
+        
+        .kpi-card.whatsapp-work .kpi-formula {
+            color: #d0f0d0;
         }
         
         .period-info {
@@ -422,6 +448,20 @@
             margin-top: 30px;
             padding-top: 20px;
             border-top: 2px solid #667eea;
+        }
+        
+        .whatsapp-webhooks-section {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 2px solid #25d366;
+        }
+        
+        .whatsapp-night-section {
+            margin-bottom: 30px;
+        }
+        
+        .whatsapp-work-section {
+            margin-bottom: 30px;
         }
     </style>
 </head>
@@ -546,6 +586,22 @@
                     <div class="kpi-formula">=п.31+п.32+п.33+п.34</div>
                 </div>
                 
+                <div class="kpi-card whatsapp-night">
+                    <div class="kpi-title">🌙 WhatsApp ночное время</div>
+                    <div class="kpi-value" id="whatsappNightSum">
+                        {{ kpis.whatsapp_night_sum }},00 ₽
+                    </div>
+                    <div class="kpi-formula">=п.35+п.36+п.37+п.38+п.39</div>
+                </div>
+                
+                <div class="kpi-card whatsapp-work">
+                    <div class="kpi-title">☀️ WhatsApp рабочее время</div>
+                    <div class="kpi-value" id="whatsappWorkSum">
+                        {{ kpis.whatsapp_work_sum }},00 ₽
+                    </div>
+                    <div class="kpi-formula">=п.40+п.41+п.42+п.43+п.44</div>
+                </div>
+                
                 <div class="kpi-card">
                     <div class="kpi-title">Кол-во отмен</div>
                     <div class="kpi-value" id="cancellationCount">
@@ -572,7 +628,7 @@
                     <div class="stats-col-sum">Сумма</div>
                 </div>
                 
-                {% for i in range(1, 35) %}
+                {% for i in range(1, 47) %}
                 <div class="stats-row">
                     <div class="stats-col-stage">Стадия {{ i }}</div>
                     <div class="stats-col-count">{{ stats['hook' ~ i ~ '_count'] or 0 }}</div>
@@ -617,11 +673,7 @@
                     27: "Резерв",
                     28: "Резерв",
                     29: "Резерв",
-                    30: "Резерв",
-                    31: "Подтвердил на сайте с предоплатой",
-                    32: "Не подтвердил на сайте с предоплатой",
-                    33: "Подтвердил на сайте без предоплаты",
-                    34: "Не подтвердил на сайте без предоплаты"
+                    30: "Резерв"
                 } %}
                 
                 {% for i in range(1, 31) %}
@@ -636,13 +688,88 @@
             <div class="website-webhooks-section">
                 <h3 class="section-title" style="color: #667eea;">🌐 Подтверждения на сайте</h3>
                 <div class="webhook-types">
+                    {% set website_types = {
+                        31: "Подтвердил на сайте с предоплатой",
+                        32: "Не подтвердил на сайте с предоплатой",
+                        33: "Подтвердил на сайте без предоплаты",
+                        34: "Не подтвердил на сайте без предоплаты"
+                    } %}
+                    
                     {% for i in range(31, 35) %}
-                    <div class="webhook-type" data-hook-id="{{ i }}" onclick="showWebhookDetails({{ i }}, '{{ webhook_types[i] }}')">
-                        <div class="webhook-type-title">{{ i }}. {{ webhook_types[i] }}</div>
+                    <div class="webhook-type" data-hook-id="{{ i }}" onclick="showWebhookDetails({{ i }}, '{{ website_types[i] }}')">
+                        <div class="webhook-type-title">{{ i }}. {{ website_types[i] }}</div>
                         <div>Количество: <span class="webhook-count">{{ stats['hook' ~ i ~ '_count'] or 0 }}</span></div>
                         <div style="color: #667eea; font-weight: bold;">Сумма: {{ stats['hook' ~ i ~ '_sum'] or 0 }} ₽</div>
                     </div>
                     {% endfor %}
+                </div>
+            </div>
+            
+            <!-- Отдельная секция для WhatsApp вебхуков -->
+            <div class="whatsapp-webhooks-section">
+                <h3 class="section-title" style="color: #25d366;">💬 WhatsApp уведомления</h3>
+                
+                <!-- Ночное время -->
+                <div class="whatsapp-night-section">
+                    <h4 style="color: #434343; margin-bottom: 15px;">🌙 Ночное время</h4>
+                    <div class="webhook-types">
+                        {% set whatsapp_night_types = {
+                            35: "Ватсап ночное время пишем",
+                            36: "Ватсап ночное время подтвердил",
+                            37: "Ватсап ночное время отменил",
+                            38: "Ватсап ночное время изменить",
+                            39: "Ватсап ночное время не ответил"
+                        } %}
+                        
+                        {% for i in range(35, 40) %}
+                        <div class="webhook-type" data-hook-id="{{ i }}" onclick="showWebhookDetails({{ i }}, '{{ whatsapp_night_types[i] }}')">
+                            <div class="webhook-type-title">{{ i }}. {{ whatsapp_night_types[i] }}</div>
+                            <div>Количество: <span class="webhook-count">{{ stats['hook' ~ i ~ '_count'] or 0 }}</span></div>
+                            <div style="color: #434343; font-weight: bold;">Сумма: {{ stats['hook' ~ i ~ '_sum'] or 0 }} ₽</div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                
+                <!-- Рабочее время -->
+                <div class="whatsapp-work-section">
+                    <h4 style="color: #25d366; margin-bottom: 15px;">☀️ Рабочее время</h4>
+                    <div class="webhook-types">
+                        {% set whatsapp_work_types = {
+                            40: "Ватсап рабочее время пишем",
+                            41: "Ватсап рабочее время подтвердил",
+                            42: "Ватсап рабочее время отменил",
+                            43: "Ватсап рабочее время изменить",
+                            44: "Ватсап рабочее время не ответил"
+                        } %}
+                        
+                        {% for i in range(40, 45) %}
+                        <div class="webhook-type" data-hook-id="{{ i }}" onclick="showWebhookDetails({{ i }}, '{{ whatsapp_work_types[i] }}')">
+                            <div class="webhook-type-title">{{ i }}. {{ whatsapp_work_types[i] }}</div>
+                            <div>Количество: <span class="webhook-count">{{ stats['hook' ~ i ~ '_count'] or 0 }}</span></div>
+                            <div style="color: #25d366; font-weight: bold;">Сумма: {{ stats['hook' ~ i ~ '_sum'] or 0 }} ₽</div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                
+                <!-- Итоговые показатели -->
+                <div style="margin-top: 20px;">
+                    <h4 style="color: #25d366; margin-bottom: 15px;">📊 Резерв показатели</h4>
+                    <div class="webhook-types">
+                        {% set whatsapp_summary_types = {
+                            45: "Итог ночное время",
+                            46: "Итог рабочее время"
+                        } %}
+                        
+                        {% for i in range(45, 47) %}
+                        <div class="webhook-type" data-hook-id="{{ i }}" onclick="showWebhookDetails({{ i }}, '{{ whatsapp_summary_types[i] }}')">
+                            <div class="webhook-type-title">{{ i }}. {{ whatsapp_summary_types[i] }}</div>
+                            <div>Количество: <span class="webhook-count">{{ stats['hook' ~ i ~ '_count'] or 0 }}</span></div>
+                            <div style="color: #25d366; font-weight: bold;">Сумма: {{ stats['hook' ~ i ~ '_sum'] or 0 }} ₽</div>
+                        </div>
+                        {% endfor %}
+                    </div>
                 </div>
             </div>
         </div>

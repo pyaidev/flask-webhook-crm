@@ -1,0 +1,34 @@
+[Unit]
+Description=Webhook Application with Gunicorn
+After=network.target
+
+[Service]
+Type=forking
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/web
+Environment=PATH=/var/www/web/venv/bin
+Environment=PYTHONPATH=/var/www/web
+ExecStart=/var/www/web/venv/bin/gunicorn --config gunicorn.conf.py wsgi:application
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=5
+PrivateTmp=true
+PIDFile=/var/www/web/gunicorn.pid
+
+# Restart policy
+Restart=always
+RestartSec=3
+
+# Security settings
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/www/web
+ProtectHome=yes
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target

@@ -14,7 +14,8 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler()  # Только в консоль, убираем файл
+        logging.FileHandler("webhook_processor.log"),
+        logging.StreamHandler()  # Also output to console
     ]
 )
 logger = logging.getLogger(__name__)
@@ -29,6 +30,192 @@ webhook_queue = Queue()
 
 # Moscow timezone
 moscow_tz = pytz.timezone('Europe/Moscow')
+
+
+def init_db():
+    """Initialize the database with required tables"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    # Table for storing webhook data
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS webhooks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        hook_type TEXT NOT NULL,
+        name TEXT,
+        summa TEXT,
+        received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        received_at_moscow TEXT,
+        processing_date TEXT,
+        raw_data TEXT
+    )
+    ''')
+
+    # Add received_at_moscow column if it doesn't exist
+    try:
+        cursor.execute("SELECT received_at_moscow FROM webhooks LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE webhooks ADD COLUMN received_at_moscow TEXT")
+        logger.info("Added received_at_moscow column to webhooks table")
+
+    # Table for storing daily statistics with sum columns (теперь до 46)
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS daily_stats (
+        date TEXT PRIMARY KEY,
+        hook1_count INTEGER DEFAULT 0,
+        hook2_count INTEGER DEFAULT 0,
+        hook3_count INTEGER DEFAULT 0,
+        hook4_count INTEGER DEFAULT 0,
+        hook5_count INTEGER DEFAULT 0,
+        hook6_count INTEGER DEFAULT 0,
+        hook7_count INTEGER DEFAULT 0,
+        hook8_count INTEGER DEFAULT 0,
+        hook9_count INTEGER DEFAULT 0,
+        hook10_count INTEGER DEFAULT 0,
+        hook11_count INTEGER DEFAULT 0,
+        hook12_count INTEGER DEFAULT 0,
+        hook13_count INTEGER DEFAULT 0,
+        hook14_count INTEGER DEFAULT 0,
+        hook15_count INTEGER DEFAULT 0,
+        hook16_count INTEGER DEFAULT 0,
+        hook17_count INTEGER DEFAULT 0,
+        hook18_count INTEGER DEFAULT 0,
+        hook19_count INTEGER DEFAULT 0,
+        hook20_count INTEGER DEFAULT 0,
+        hook21_count INTEGER DEFAULT 0,
+        hook22_count INTEGER DEFAULT 0,
+        hook23_count INTEGER DEFAULT 0,
+        hook24_count INTEGER DEFAULT 0,
+        hook25_count INTEGER DEFAULT 0,
+        hook26_count INTEGER DEFAULT 0,
+        hook27_count INTEGER DEFAULT 0,
+        hook28_count INTEGER DEFAULT 0,
+        hook29_count INTEGER DEFAULT 0,
+        hook30_count INTEGER DEFAULT 0,
+        hook31_count INTEGER DEFAULT 0,
+        hook32_count INTEGER DEFAULT 0,
+        hook33_count INTEGER DEFAULT 0,
+        hook34_count INTEGER DEFAULT 0,
+        hook35_count INTEGER DEFAULT 0,
+        hook36_count INTEGER DEFAULT 0,
+        hook37_count INTEGER DEFAULT 0,
+        hook38_count INTEGER DEFAULT 0,
+        hook39_count INTEGER DEFAULT 0,
+        hook40_count INTEGER DEFAULT 0,
+        hook41_count INTEGER DEFAULT 0,
+        hook42_count INTEGER DEFAULT 0,
+        hook43_count INTEGER DEFAULT 0,
+        hook44_count INTEGER DEFAULT 0,
+        hook45_count INTEGER DEFAULT 0,
+        hook46_count INTEGER DEFAULT 0,
+        total_count INTEGER DEFAULT 0,
+        hook1_sum INTEGER DEFAULT 0,
+        hook2_sum INTEGER DEFAULT 0,
+        hook3_sum INTEGER DEFAULT 0,
+        hook4_sum INTEGER DEFAULT 0,
+        hook5_sum INTEGER DEFAULT 0,
+        hook6_sum INTEGER DEFAULT 0,
+        hook7_sum INTEGER DEFAULT 0,
+        hook8_sum INTEGER DEFAULT 0,
+        hook9_sum INTEGER DEFAULT 0,
+        hook10_sum INTEGER DEFAULT 0,
+        hook11_sum INTEGER DEFAULT 0,
+        hook12_sum INTEGER DEFAULT 0,
+        hook13_sum INTEGER DEFAULT 0,
+        hook14_sum INTEGER DEFAULT 0,
+        hook15_sum INTEGER DEFAULT 0,
+        hook16_sum INTEGER DEFAULT 0,
+        hook17_sum INTEGER DEFAULT 0,
+        hook18_sum INTEGER DEFAULT 0,
+        hook19_sum INTEGER DEFAULT 0,
+        hook20_sum INTEGER DEFAULT 0,
+        hook21_sum INTEGER DEFAULT 0,
+        hook22_sum INTEGER DEFAULT 0,
+        hook23_sum INTEGER DEFAULT 0,
+        hook24_sum INTEGER DEFAULT 0,
+        hook25_sum INTEGER DEFAULT 0,
+        hook26_sum INTEGER DEFAULT 0,
+        hook27_sum INTEGER DEFAULT 0,
+        hook28_sum INTEGER DEFAULT 0,
+        hook29_sum INTEGER DEFAULT 0,
+        hook30_sum INTEGER DEFAULT 0,
+        hook31_sum INTEGER DEFAULT 0,
+        hook32_sum INTEGER DEFAULT 0,
+        hook33_sum INTEGER DEFAULT 0,
+        hook34_sum INTEGER DEFAULT 0,
+        hook35_sum INTEGER DEFAULT 0,
+        hook36_sum INTEGER DEFAULT 0,
+        hook37_sum INTEGER DEFAULT 0,
+        hook38_sum INTEGER DEFAULT 0,
+        hook39_sum INTEGER DEFAULT 0,
+        hook40_sum INTEGER DEFAULT 0,
+        hook41_sum INTEGER DEFAULT 0,
+        hook42_sum INTEGER DEFAULT 0,
+        hook43_sum INTEGER DEFAULT 0,
+        hook44_sum INTEGER DEFAULT 0,
+        hook45_sum INTEGER DEFAULT 0,
+        hook46_sum INTEGER DEFAULT 0,
+        total_sum INTEGER DEFAULT 0,
+        website_confirmations_sum INTEGER DEFAULT 0,
+        whatsapp_night_sum INTEGER DEFAULT 0,
+        whatsapp_work_sum INTEGER DEFAULT 0
+    )
+    ''')
+
+    # Make sure all columns exist (теперь до 46)
+    for i in range(1, 47):  # Изменено с 35 на 47
+        # Check and add count columns if they don't exist
+        count_col = f"hook{i}_count"
+        try:
+            cursor.execute(f"SELECT {count_col} FROM daily_stats LIMIT 1")
+        except sqlite3.OperationalError:
+            cursor.execute(f"ALTER TABLE daily_stats ADD COLUMN {count_col} INTEGER DEFAULT 0")
+            logger.info(f"Added {count_col} column to daily_stats table")
+
+        # Check and add sum columns if they don't exist
+        sum_col = f"hook{i}_sum"
+        try:
+            cursor.execute(f"SELECT {sum_col} FROM daily_stats LIMIT 1")
+        except sqlite3.OperationalError:
+            cursor.execute(f"ALTER TABLE daily_stats ADD COLUMN {sum_col} INTEGER DEFAULT 0")
+            logger.info(f"Added {sum_col} column to daily_stats table")
+
+    # Add total columns if they don't exist
+    try:
+        cursor.execute("SELECT total_count FROM daily_stats LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE daily_stats ADD COLUMN total_count INTEGER DEFAULT 0")
+        logger.info("Added total_count column to daily_stats table")
+
+    try:
+        cursor.execute("SELECT total_sum FROM daily_stats LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE daily_stats ADD COLUMN total_sum INTEGER DEFAULT 0")
+        logger.info("Added total_sum column to daily_stats table")
+
+    # Add website confirmations sum column if it doesn't exist
+    try:
+        cursor.execute("SELECT website_confirmations_sum FROM daily_stats LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE daily_stats ADD COLUMN website_confirmations_sum INTEGER DEFAULT 0")
+        logger.info("Added website_confirmations_sum column to daily_stats table")
+
+    # Add WhatsApp sum columns if they don't exist
+    try:
+        cursor.execute("SELECT whatsapp_night_sum FROM daily_stats LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE daily_stats ADD COLUMN whatsapp_night_sum INTEGER DEFAULT 0")
+        logger.info("Added whatsapp_night_sum column to daily_stats table")
+
+    try:
+        cursor.execute("SELECT whatsapp_work_sum FROM daily_stats LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE daily_stats ADD COLUMN whatsapp_work_sum INTEGER DEFAULT 0")
+        logger.info("Added whatsapp_work_sum column to daily_stats table")
+
+    conn.commit()
+    conn.close()
+    logger.info("Database initialized successfully")
 
 
 def get_moscow_now():
@@ -59,118 +246,6 @@ def get_processing_date():
     return processing_date
 
 
-def init_db():
-    """Initialize the database with required tables"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-
-    # Table for storing webhook data
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS webhooks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        hook_type TEXT NOT NULL,
-        name TEXT,
-        summa TEXT,
-        received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        received_at_moscow TEXT,
-        processing_date TEXT,
-        raw_data TEXT
-    )
-    ''')
-
-    # Add received_at_moscow column if it doesn't exist
-    try:
-        cursor.execute("SELECT received_at_moscow FROM webhooks LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("ALTER TABLE webhooks ADD COLUMN received_at_moscow TEXT")
-        logger.info("Added received_at_moscow column to webhooks table")
-
-    # Table for storing daily statistics with sum columns (до 46)
-    base_columns = "date TEXT PRIMARY KEY, total_count INTEGER DEFAULT 0, total_sum INTEGER DEFAULT 0"
-    special_columns = "website_confirmations_sum INTEGER DEFAULT 0, whatsapp_night_sum INTEGER DEFAULT 0, whatsapp_work_sum INTEGER DEFAULT 0"
-    
-    # Generate hook columns dynamically
-    hook_columns = []
-    for i in range(1, 47):  # 1-46
-        hook_columns.append(f"hook{i}_count INTEGER DEFAULT 0")
-        hook_columns.append(f"hook{i}_sum INTEGER DEFAULT 0")
-    
-    all_columns = f"{base_columns}, {', '.join(hook_columns)}, {special_columns}"
-    
-    cursor.execute(f'''
-    CREATE TABLE IF NOT EXISTS daily_stats (
-        {all_columns}
-    )
-    ''')
-
-    # Make sure all columns exist (до 46)
-    for i in range(1, 47):
-        # Check and add count columns if they don't exist
-        count_col = f"hook{i}_count"
-        try:
-            cursor.execute(f"SELECT {count_col} FROM daily_stats LIMIT 1")
-        except sqlite3.OperationalError:
-            cursor.execute(f"ALTER TABLE daily_stats ADD COLUMN {count_col} INTEGER DEFAULT 0")
-            logger.info(f"Added {count_col} column to daily_stats table")
-
-        # Check and add sum columns if they don't exist
-        sum_col = f"hook{i}_sum"
-        try:
-            cursor.execute(f"SELECT {sum_col} FROM daily_stats LIMIT 1")
-        except sqlite3.OperationalError:
-            cursor.execute(f"ALTER TABLE daily_stats ADD COLUMN {sum_col} INTEGER DEFAULT 0")
-            logger.info(f"Added {sum_col} column to daily_stats table")
-
-    # Add special columns if they don't exist
-    special_columns_list = ['total_count', 'total_sum', 'website_confirmations_sum', 'whatsapp_night_sum', 'whatsapp_work_sum']
-    for col in special_columns_list:
-        try:
-            cursor.execute(f"SELECT {col} FROM daily_stats LIMIT 1")
-        except sqlite3.OperationalError:
-            cursor.execute(f"ALTER TABLE daily_stats ADD COLUMN {col} INTEGER DEFAULT 0")
-            logger.info(f"Added {col} column to daily_stats table")
-
-    conn.commit()
-    conn.close()
-    logger.info("Database initialized successfully")
-
-
-def clean_summa(summa):
-    """Clean and convert summa to integer"""
-    try:
-        # Original summa value for logging
-        original_summa = summa
-        
-        # Handle the case when summa ends with underscore(s)
-        if isinstance(summa, str):
-            summa = summa.rstrip('_')
-            logger.info(f"Stripped trailing underscores: '{original_summa}' -> '{summa}'")
-        
-        # Handle special cases
-        if not summa or summa.lower() in ('__', 'none', 'null', ''):
-            summa_int = 0
-            logger.info(f"Special case summa value '{original_summa}' converted to 0")
-        else:
-            # Remove any non-numeric chars except decimal point and digits
-            summa_clean = ''.join(c for c in str(summa) if c.isdigit() or c in '.,')
-            # Replace comma with dot for decimal
-            summa_clean = summa_clean.replace(',', '.')
-            
-            # Try to convert to float first, then to int
-            if summa_clean:
-                summa_float = float(summa_clean)
-                summa_int = int(summa_float)
-                logger.info(f"Converted summa '{original_summa}' -> '{summa_clean}' -> {summa_int}")
-            else:
-                summa_int = 0
-                logger.info(f"Empty summa after cleaning '{original_summa}', using 0")
-        
-        return summa_int
-    except (ValueError, TypeError, AttributeError) as e:
-        logger.warning(f"Could not convert summa '{summa}' to integer, using 0. Error: {str(e)}")
-        return 0
-
-
 def save_webhook(hook_type, name, summa, raw_data):
     """Save webhook data to database"""
     conn = None
@@ -194,8 +269,37 @@ def save_webhook(hook_type, name, summa, raw_data):
         now = get_moscow_now()
         moscow_time_str = now.strftime('%Y-%m-%d %H:%M:%S')
 
-        # Clean summa
-        summa_int = clean_summa(summa)
+        # Convert summa to integer if possible
+        try:
+            # Original summa value for logging
+            original_summa = summa
+            
+            # Handle the case when summa ends with underscore(s)
+            if isinstance(summa, str):
+                summa = summa.rstrip('_')
+                logger.info(f"Stripped trailing underscores: '{original_summa}' -> '{summa}'")
+            
+            # Handle special cases
+            if not summa or summa.lower() in ('__', 'none', 'null', ''):
+                summa_int = 0
+                logger.info(f"Special case summa value '{original_summa}' converted to 0")
+            else:
+                # Remove any non-numeric chars except decimal point and digits
+                summa_clean = ''.join(c for c in str(summa) if c.isdigit() or c in '.,')
+                # Replace comma with dot for decimal
+                summa_clean = summa_clean.replace(',', '.')
+                
+                # Try to convert to float first, then to int
+                if summa_clean:
+                    summa_float = float(summa_clean)
+                    summa_int = int(summa_float)
+                    logger.info(f"Converted summa '{original_summa}' -> '{summa_clean}' -> {summa_int}")
+                else:
+                    summa_int = 0
+                    logger.info(f"Empty summa after cleaning '{original_summa}', using 0")
+        except (ValueError, TypeError, AttributeError) as e:
+            summa_int = 0
+            logger.warning(f"Could not convert summa '{summa}' to integer, using 0. Error: {str(e)}")
 
         # Log detailed information
         logger.info(
@@ -230,8 +334,8 @@ def save_webhook(hook_type, name, summa, raw_data):
             WHERE date = ?
         """
         
-        # Check if this is one of the special hooks and update corresponding sums
-        if hook_num in [31, 32, 33, 34]:  # Website confirmations
+        # Check if this is one of the website confirmation hooks (31-34)
+        if hook_num in [31, 32, 33, 34]:
             update_query = f"""
                 UPDATE daily_stats 
                 SET {hook_type} = COALESCE({hook_type}, 0) + 1, 
@@ -241,9 +345,10 @@ def save_webhook(hook_type, name, summa, raw_data):
                     website_confirmations_sum = COALESCE(website_confirmations_sum, 0) + ?
                 WHERE date = ?
             """
-            logger.info(f"Executing update query with website confirmations")
+            logger.info(f"Executing update query with website confirmations: {update_query} with values ({summa_int}, {summa_int}, {summa_int}, {processing_date})")
             cursor.execute(update_query, (summa_int, summa_int, summa_int, processing_date))
-        elif hook_num in [35, 36, 37, 38, 39]:  # WhatsApp night
+        # Check if this is one of the WhatsApp night hooks (35-39)
+        elif hook_num in [35, 36, 37, 38, 39]:
             update_query = f"""
                 UPDATE daily_stats 
                 SET {hook_type} = COALESCE({hook_type}, 0) + 1, 
@@ -253,9 +358,10 @@ def save_webhook(hook_type, name, summa, raw_data):
                     whatsapp_night_sum = COALESCE(whatsapp_night_sum, 0) + ?
                 WHERE date = ?
             """
-            logger.info(f"Executing update query with WhatsApp night")
+            logger.info(f"Executing update query with WhatsApp night: {update_query} with values ({summa_int}, {summa_int}, {summa_int}, {processing_date})")
             cursor.execute(update_query, (summa_int, summa_int, summa_int, processing_date))
-        elif hook_num in [40, 41, 42, 43, 44]:  # WhatsApp work
+        # Check if this is one of the WhatsApp work hooks (40-44)
+        elif hook_num in [40, 41, 42, 43, 44]:
             update_query = f"""
                 UPDATE daily_stats 
                 SET {hook_type} = COALESCE({hook_type}, 0) + 1, 
@@ -265,10 +371,10 @@ def save_webhook(hook_type, name, summa, raw_data):
                     whatsapp_work_sum = COALESCE(whatsapp_work_sum, 0) + ?
                 WHERE date = ?
             """
-            logger.info(f"Executing update query with WhatsApp work")
+            logger.info(f"Executing update query with WhatsApp work: {update_query} with values ({summa_int}, {summa_int}, {summa_int}, {processing_date})")
             cursor.execute(update_query, (summa_int, summa_int, summa_int, processing_date))
         else:
-            logger.info(f"Executing standard update query")
+            logger.info(f"Executing update query: {update_query} with values ({summa_int}, {summa_int}, {processing_date})")
             cursor.execute(update_query, (summa_int, summa_int, processing_date))
         
         logger.info("Updated daily stats")
@@ -302,359 +408,7 @@ def save_webhook(hook_type, name, summa, raw_data):
             conn.close()
         return False
 
-
-def get_stats_for_date(date):
-    """Get statistics for a specific date"""
-    try:
-        conn = sqlite3.connect(DB_PATH, timeout=20)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-
-        # First ensure the date exists in the table
-        cursor.execute("INSERT OR IGNORE INTO daily_stats (date) VALUES (?)", (date,))
-        conn.commit()
-
-        # Then get the stats
-        cursor.execute("SELECT * FROM daily_stats WHERE date = ?", (date,))
-        stats = cursor.fetchone()
-
-        if not stats:
-            logger.error(f"No stats found for date {date}")
-            return {}
-
-        # Convert to dictionary
-        stats_dict = dict(stats)
-
-        # Ensure all keys have values (not None)
-        for key in stats_dict:
-            if stats_dict[key] is None:
-                stats_dict[key] = 0
-
-        # Calculate and verify totals
-        total_count = 0
-        total_sum = 0
-        website_confirmations_sum = 0
-        whatsapp_night_sum = 0
-        whatsapp_work_sum = 0
-        
-        for i in range(1, 47):
-            count_key = f"hook{i}_count"
-            sum_key = f"hook{i}_sum"
-            if count_key in stats_dict:
-                total_count += stats_dict[count_key]
-            if sum_key in stats_dict:
-                total_sum += stats_dict[sum_key]
-            
-            # Calculate special sums
-            if i in [31, 32, 33, 34] and sum_key in stats_dict:
-                website_confirmations_sum += stats_dict[sum_key]
-            if i in [35, 36, 37, 38, 39] and sum_key in stats_dict:
-                whatsapp_night_sum += stats_dict[sum_key]
-            if i in [40, 41, 42, 43, 44] and sum_key in stats_dict:
-                whatsapp_work_sum += stats_dict[sum_key]
-        
-        # Update totals if they don't match
-        if (total_count != stats_dict.get('total_count', 0) or 
-            total_sum != stats_dict.get('total_sum', 0) or 
-            website_confirmations_sum != stats_dict.get('website_confirmations_sum', 0) or
-            whatsapp_night_sum != stats_dict.get('whatsapp_night_sum', 0) or
-            whatsapp_work_sum != stats_dict.get('whatsapp_work_sum', 0)):
-            logger.info(f"Updating totals in database to match calculated values")
-            cursor.execute(
-                "UPDATE daily_stats SET total_count = ?, total_sum = ?, website_confirmations_sum = ?, whatsapp_night_sum = ?, whatsapp_work_sum = ? WHERE date = ?",
-                (total_count, total_sum, website_confirmations_sum, whatsapp_night_sum, whatsapp_work_sum, date)
-            )
-            conn.commit()
-            stats_dict['total_count'] = total_count
-            stats_dict['total_sum'] = total_sum
-            stats_dict['website_confirmations_sum'] = website_confirmations_sum
-            stats_dict['whatsapp_night_sum'] = whatsapp_night_sum
-            stats_dict['whatsapp_work_sum'] = whatsapp_work_sum
-
-        conn.close()
-        return stats_dict
-    except Exception as e:
-        logger.error(f"Error getting stats for date {date}: {str(e)}")
-        logger.error(traceback.format_exc())
-        if 'conn' in locals() and conn:
-            conn.close()
-        return {}
-
-
-def calculate_kpis(stats_dict):
-    """Calculate KPIs based on daily statistics"""
-    # Ensure all hook counts exist to avoid None values
-    for i in range(1, 47):
-        key = f"hook{i}_count"
-        sum_key = f"hook{i}_sum"
-        if key not in stats_dict or stats_dict[key] is None:
-            stats_dict[key] = 0
-        if sum_key not in stats_dict or stats_dict[sum_key] is None:
-            stats_dict[sum_key] = 0
-
-    # Calculate cancellation count (п.14 + п.19 + п.23)
-    cancellation_count = (
-            stats_dict.get('hook14_count', 0) +
-            stats_dict.get('hook19_count', 0) +
-            stats_dict.get('hook23_count', 0)
-    )
-
-    # Calculate missed calls count (п.15 + п.20 + п.24)
-    missed_calls_count = (
-            stats_dict.get('hook15_count', 0) +
-            stats_dict.get('hook20_count', 0) +
-            stats_dict.get('hook24_count', 0)
-    )
-
-    # Calculate cancellation rate (p.14 + p.19 + p.23) / p.7 * 100%
-    all_ready_count = stats_dict.get('hook7_count', 0)
-    if all_ready_count == 0:
-        all_ready_count = 1  # Avoid division by zero
-
-    cancellation_rate = round((cancellation_count / all_ready_count) * 100, 2)
-    missed_calls_rate = round((missed_calls_count / all_ready_count) * 100, 2)
-
-    # Calculate confirmed orders sum (p.13 + p.18 + p.22)
-    confirmed_orders_sum = (
-            stats_dict.get('hook13_sum', 0) +
-            stats_dict.get('hook18_sum', 0) +
-            stats_dict.get('hook22_sum', 0)
-    )
-
-    # Get special sums
-    website_confirmations_sum = stats_dict.get('website_confirmations_sum', 0)
-    whatsapp_night_sum = stats_dict.get('whatsapp_night_sum', 0)
-    whatsapp_work_sum = stats_dict.get('whatsapp_work_sum', 0)
-
-    # Return KPIs
-    return {
-        'cancellation_rate': cancellation_rate,
-        'missed_calls_rate': missed_calls_rate,
-        'confirmed_orders_sum': confirmed_orders_sum,
-        'cancellation_count': cancellation_count,
-        'missed_calls_count': missed_calls_count,
-        'website_confirmations_sum': website_confirmations_sum,
-        'whatsapp_night_sum': whatsapp_night_sum,
-        'whatsapp_work_sum': whatsapp_work_sum
-    }
-
-
-def parse_time(time_str):
-    """Parse time string in format HH:MM to hours and minutes"""
-    if not time_str:
-        return None
     
-    try:
-        hours, minutes = map(int, time_str.split(':'))
-        return hours, minutes
-    except (ValueError, TypeError):
-        logger.error(f"Invalid time format: {time_str}")
-        return None
-
-
-def get_webhooks_by_filter(date=None, hook_type=None, time_point=None, time_from=None, time_to=None, limit=100):
-    """Get webhooks by filter criteria including time filters"""
-    try:
-        conn = sqlite3.connect(DB_PATH, timeout=20)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-
-        # Check if the received_at_moscow column exists
-        try:
-            cursor.execute("SELECT received_at_moscow FROM webhooks LIMIT 1")
-            use_moscow_time = True
-        except sqlite3.OperationalError:
-            use_moscow_time = False
-
-        if use_moscow_time:
-            query = "SELECT id, hook_type, name, summa, received_at_moscow as received_at, processing_date, raw_data FROM webhooks WHERE 1=1"
-        else:
-            query = "SELECT id, hook_type, name, summa, datetime(received_at, 'localtime') as received_at, processing_date, raw_data FROM webhooks WHERE 1=1"
-
-        params = []
-
-        if date:
-            query += " AND processing_date = ?"
-            params.append(date)
-
-        if hook_type:
-            query += " AND hook_type = ?"
-            params.append(hook_type)
-            
-        # Add time filtering
-        if time_point:
-            parsed_time = parse_time(time_point)
-            if parsed_time:
-                hours, minutes = parsed_time
-                time_format = f"{hours:02d}:{minutes:02d}"
-                
-                if use_moscow_time:
-                    query += " AND substr(received_at_moscow, 12, 5) <= ?"
-                else:
-                    query += " AND time(received_at) <= ?"
-                
-                params.append(time_format)
-                logger.info(f"Filtering webhooks for time point <= {time_format}")
-        
-        elif time_from and time_to:
-            from_time = parse_time(time_from)
-            to_time = parse_time(time_to)
-            
-            if from_time and to_time:
-                from_hours, from_minutes = from_time
-                to_hours, to_minutes = to_time
-                
-                from_format = f"{from_hours:02d}:{from_minutes:02d}"
-                to_format = f"{to_hours:02d}:{to_minutes:02d}"
-                
-                if use_moscow_time:
-                    query += " AND substr(received_at_moscow, 12, 5) >= ? AND substr(received_at_moscow, 12, 5) <= ?"
-                else:
-                    query += " AND time(received_at) >= ? AND time(received_at) <= ?"
-                
-                params.append(from_format)
-                params.append(to_format)
-                logger.info(f"Filtering webhooks for time range {from_format} - {to_format}")
-
-        query += " ORDER BY received_at DESC LIMIT ?"
-        params.append(limit)
-
-        logger.info(f"Executing query: {query} with params: {params}")
-        cursor.execute(query, params)
-        rows = cursor.fetchall()
-
-        # Convert to list of dictionaries
-        webhooks = []
-        for row in rows:
-            webhook = {}
-            for key in row.keys():
-                webhook[key] = row[key]
-            webhooks.append(webhook)
-
-        conn.close()
-        logger.info(f"Retrieved {len(webhooks)} webhooks matching filter criteria")
-        return webhooks
-    except Exception as e:
-        logger.error(f"Error getting webhooks: {str(e)}")
-        logger.error(traceback.format_exc())
-        if 'conn' in locals() and conn:
-            conn.close()
-        return []
-
-
-def calculate_stats_for_time_filter(date, time_point=None, time_from=None, time_to=None):
-    """Calculate statistics for webhooks filtered by time"""
-    try:
-        # Get all webhooks for the specified date and time filters
-        webhooks = get_webhooks_by_filter(
-            date=date, 
-            time_point=time_point, 
-            time_from=time_from, 
-            time_to=time_to, 
-            limit=10000
-        )
-        
-        # Initialize stats dictionary with zeros (до 46)
-        stats_dict = {f"hook{i}_count": 0 for i in range(1, 47)}
-        stats_dict.update({f"hook{i}_sum": 0 for i in range(1, 47)})
-        stats_dict['total_count'] = 0
-        stats_dict['total_sum'] = 0
-        stats_dict['website_confirmations_sum'] = 0
-        stats_dict['whatsapp_night_sum'] = 0
-        stats_dict['whatsapp_work_sum'] = 0
-        
-        # Count webhooks by type and sum values
-        for webhook in webhooks:
-            hook_type = webhook.get('hook_type', '')
-            if hook_type and hook_type.startswith('hook') and '_count' in hook_type:
-                # Increment count
-                stats_dict[hook_type] = stats_dict.get(hook_type, 0) + 1
-                stats_dict['total_count'] += 1
-                
-                # Extract hook number for sum column
-                try:
-                    hook_num = int(hook_type.replace('hook', '').replace('_count', ''))
-                    sum_key = f"hook{hook_num}_sum"
-                    
-                    # Add summa value
-                    summa_str = webhook.get('summa', '0')
-                    summa_int = clean_summa(summa_str)
-                    
-                    stats_dict[sum_key] = stats_dict.get(sum_key, 0) + summa_int
-                    stats_dict['total_sum'] += summa_int
-                    
-                    # Add to special sums
-                    if hook_num in [31, 32, 33, 34]:
-                        stats_dict['website_confirmations_sum'] += summa_int
-                    elif hook_num in [35, 36, 37, 38, 39]:
-                        stats_dict['whatsapp_night_sum'] += summa_int
-                    elif hook_num in [40, 41, 42, 43, 44]:
-                        stats_dict['whatsapp_work_sum'] += summa_int
-                        
-                except ValueError:
-                    # If hook number extraction fails, skip
-                    pass
-        
-        logger.info(f"Calculated stats for time filter: {stats_dict}")
-        return stats_dict
-    except Exception as e:
-        logger.error(f"Error calculating stats for time filter: {str(e)}")
-        logger.error(traceback.format_exc())
-        return {}
-
-
-def get_webhook_stage_names():
-    """Get mapping of webhook types to stage names"""
-    return {
-        "hook1_count": "1. Все сделки",
-        "hook2_count": "2. Без статуса",
-        "hook3_count": "3. без даты",
-        "hook4_count": "4. без региона",
-        "hook5_count": "5. без суммы",
-        "hook6_count": "6. без адреса",
-        "hook7_count": "7. все готово",
-        "hook8_count": "8. мск",
-        "hook9_count": "9. Спб",
-        "hook10_count": "10. Регион",
-        "hook11_count": "11. ЗВоним без предоплаты",
-        "hook12_count": "12. Звоним без предоплаты несколько товаров",
-        "hook13_count": "13. Подтвердил заказ без предоплаты",
-        "hook14_count": "14. Отменил заказ без предоплаты",
-        "hook15_count": "15. Не взял трубку без предоплаты",
-        "hook16_count": "16. ЗВоним с предоплатой",
-        "hook17_count": "17. Звоним с предоплатой несколько товаров",
-        "hook18_count": "18. Подтвердил заказ с предоплатой",
-        "hook19_count": "19. Отменил заказ с предоплатой",
-        "hook20_count": "20. Не взял трубку с предоплатой",
-        "hook21_count": "21. ЗВоним регион",
-        "hook22_count": "22. Подтвердил заказ регион",
-        "hook23_count": "23. Отменил заказ регион",
-        "hook24_count": "24. Не взял трубку регион",
-        "hook25_count": "25. неопонятно",
-        "hook26_count": "26. автоответчик",
-        "hook27_count": "27. Резерв",
-        "hook28_count": "28. Резерв",
-        "hook29_count": "29. Резерв",
-        "hook30_count": "30. Резерв",
-        "hook31_count": "31. Подтвердил на сайте с предоплатой",
-        "hook32_count": "32. Не подтвердил на сайте с предоплатой",
-        "hook33_count": "33. Подтвердил на сайте без предоплаты",
-        "hook34_count": "34. Не подтвердил на сайте без предоплаты",
-        "hook35_count": "35. Ватсап ночное время пишем",
-        "hook36_count": "36. Ватсап ночное время подтвердил",
-        "hook37_count": "37. Ватсап ночное время отменил",
-        "hook38_count": "38. Ватсап ночное время изменить",
-        "hook39_count": "39. Ватсап ночное время не ответил",
-        "hook40_count": "40. Ватсап рабочее время пишем",
-        "hook41_count": "41. Ватсап рабочее время подтвердил",
-        "hook42_count": "42. Ватсап рабочее время отменил",
-        "hook43_count": "43. Ватсап рабочее время изменить",
-        "hook44_count": "44. Ватсап рабочее время не ответил",
-        "hook45_count": "45. Итог ночное время",
-        "hook46_count": "46. Итог рабочее время"
-    }
-
-
 @app.route('/check-permissions')
 def check_permissions():
     """Check file system permissions"""
@@ -709,6 +463,10 @@ def check_permissions():
 def webhook_processor():
     """Background thread function to process webhooks from the queue"""
     logger.info("Webhook processor thread started")
+
+    # Start Flask app
+    logger.info("Starting Flask application on port 5001")
+    app.run(host='0.0.0.0', port=5001, debug=True)d")
     empty_queue_count = 0
     
     while True:
@@ -730,6 +488,17 @@ def webhook_processor():
             raw_data = webhook_data.get('raw_data')
 
             logger.info(f"Processing webhook from queue: {hook_type}, {name}, {summa}")
+            
+            # Test database connection before saving
+            try:
+                conn = sqlite3.connect(DB_PATH, timeout=20)
+                cursor = conn.cursor()
+                cursor.execute("SELECT 1")
+                conn.close()
+                logger.info("Database connection test successful")
+            except Exception as db_e:
+                logger.error(f"Database connection test failed: {str(db_e)}")
+                logger.error(traceback.format_exc())
             
             success = save_webhook(hook_type, name, summa, raw_data)
 
@@ -757,6 +526,343 @@ def webhook_processor():
                 logger.error(traceback.format_exc())
                 time_module.sleep(1)
             continue
+
+def get_stats_for_date(date):
+    """Get statistics for a specific date"""
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=20)  # Increase timeout to avoid database locks
+        conn.row_factory = sqlite3.Row  # Use row factory for easier dictionary conversion
+        cursor = conn.cursor()
+
+        # First ensure the date exists in the table
+        cursor.execute("INSERT OR IGNORE INTO daily_stats (date) VALUES (?)", (date,))
+        conn.commit()
+
+        # Then get the stats
+        cursor.execute("SELECT * FROM daily_stats WHERE date = ?", (date,))
+        stats = cursor.fetchone()
+
+        if not stats:
+            logger.error(f"No stats found for date {date}")
+            return {}
+
+        # Convert to dictionary
+        stats_dict = dict(stats)
+
+        # Ensure all keys have values (not None)
+        for key in stats_dict:
+            if stats_dict[key] is None:
+                stats_dict[key] = 0
+
+        # Log the retrieved stats for debugging
+        logger.info(f"Retrieved stats for date {date}: {stats_dict}")
+
+        # Verify total count matches sum of individual counts
+        total_count = 0
+        total_sum = 0
+        website_confirmations_sum = 0
+        whatsapp_night_sum = 0
+        whatsapp_work_sum = 0
+        
+        for i in range(1, 47):  # Изменено с 35 на 47
+            count_key = f"hook{i}_count"
+            sum_key = f"hook{i}_sum"
+            if count_key in stats_dict:
+                total_count += stats_dict[count_key]
+            if sum_key in stats_dict:
+                total_sum += stats_dict[sum_key]
+            
+            # Calculate website confirmations sum for hooks 31-34
+            if i in [31, 32, 33, 34] and sum_key in stats_dict:
+                website_confirmations_sum += stats_dict[sum_key]
+            
+            # Calculate WhatsApp night sum for hooks 35-39
+            if i in [35, 36, 37, 38, 39] and sum_key in stats_dict:
+                whatsapp_night_sum += stats_dict[sum_key]
+            
+            # Calculate WhatsApp work sum for hooks 40-44
+            if i in [40, 41, 42, 43, 44] and sum_key in stats_dict:
+                whatsapp_work_sum += stats_dict[sum_key]
+        
+        # Log verification results
+        logger.info(f"Calculated total count: {total_count}, DB total count: {stats_dict.get('total_count', 0)}")
+        logger.info(f"Calculated total sum: {total_sum}, DB total sum: {stats_dict.get('total_sum', 0)}")
+        logger.info(f"Calculated website confirmations sum: {website_confirmations_sum}, DB website confirmations sum: {stats_dict.get('website_confirmations_sum', 0)}")
+        logger.info(f"Calculated WhatsApp night sum: {whatsapp_night_sum}, DB WhatsApp night sum: {stats_dict.get('whatsapp_night_sum', 0)}")
+        logger.info(f"Calculated WhatsApp work sum: {whatsapp_work_sum}, DB WhatsApp work sum: {stats_dict.get('whatsapp_work_sum', 0)}")
+        
+        # Update totals if they don't match
+        if (total_count != stats_dict.get('total_count', 0) or 
+            total_sum != stats_dict.get('total_sum', 0) or 
+            website_confirmations_sum != stats_dict.get('website_confirmations_sum', 0) or
+            whatsapp_night_sum != stats_dict.get('whatsapp_night_sum', 0) or
+            whatsapp_work_sum != stats_dict.get('whatsapp_work_sum', 0)):
+            logger.info(f"Updating totals in database to match calculated values")
+            cursor.execute(
+                "UPDATE daily_stats SET total_count = ?, total_sum = ?, website_confirmations_sum = ?, whatsapp_night_sum = ?, whatsapp_work_sum = ? WHERE date = ?",
+                (total_count, total_sum, website_confirmations_sum, whatsapp_night_sum, whatsapp_work_sum, date)
+            )
+            conn.commit()
+            stats_dict['total_count'] = total_count
+            stats_dict['total_sum'] = total_sum
+            stats_dict['website_confirmations_sum'] = website_confirmations_sum
+            stats_dict['whatsapp_night_sum'] = whatsapp_night_sum
+            stats_dict['whatsapp_work_sum'] = whatsapp_work_sum
+
+        conn.close()
+        return stats_dict
+    except Exception as e:
+        logger.error(f"Error getting stats for date {date}: {str(e)}")
+        logger.error(traceback.format_exc())
+        if 'conn' in locals() and conn:
+            conn.close()
+        return {}
+
+def calculate_kpis(stats_dict):
+    """Calculate KPIs based on daily statistics"""
+    # Ensure all hook counts exist to avoid None values
+    for i in range(1, 47):  # Изменено с 35 на 47
+        key = f"hook{i}_count"
+        sum_key = f"hook{i}_sum"
+        if key not in stats_dict or stats_dict[key] is None:
+            stats_dict[key] = 0
+        if sum_key not in stats_dict or stats_dict[sum_key] is None:
+            stats_dict[sum_key] = 0
+
+    # Calculate cancellation count (п.14 + п.19 + п.23)
+    cancellation_count = (
+            stats_dict.get('hook14_count', 0) +
+            stats_dict.get('hook19_count', 0) +
+            stats_dict.get('hook23_count', 0)
+    )
+
+    # Calculate missed calls count (п.15 + п.20 + п.24)
+    missed_calls_count = (
+            stats_dict.get('hook15_count', 0) +
+            stats_dict.get('hook20_count', 0) +
+            stats_dict.get('hook24_count', 0)
+    )
+
+    # Calculate cancellation rate (p.14 + p.19 + p.23) / p.7 * 100%
+    all_ready_count = stats_dict.get('hook7_count', 0)
+    if all_ready_count == 0:
+        all_ready_count = 1  # Avoid division by zero
+
+    cancellation_rate = round((cancellation_count / all_ready_count) * 100, 2)
+
+    # Calculate missed calls rate (p.15 + p.20 + p.24) / p.7 * 100%
+    missed_calls_rate = round((missed_calls_count / all_ready_count) * 100, 2)
+
+    # Calculate confirmed orders sum (p.13 + p.18 + p.22)
+    confirmed_orders_sum = (
+            stats_dict.get('hook13_sum', 0) +
+            stats_dict.get('hook18_sum', 0) +
+            stats_dict.get('hook22_sum', 0)
+    )
+
+    # Calculate website confirmations sum (p.31 + p.32 + p.33 + p.34)
+    website_confirmations_sum = stats_dict.get('website_confirmations_sum', 0)
+
+    # Calculate WhatsApp sums
+    whatsapp_night_sum = stats_dict.get('whatsapp_night_sum', 0)
+    whatsapp_work_sum = stats_dict.get('whatsapp_work_sum', 0)
+
+    # Return KPIs
+    return {
+        'cancellation_rate': cancellation_rate,
+        'missed_calls_rate': missed_calls_rate,
+        'confirmed_orders_sum': confirmed_orders_sum,
+        'cancellation_count': cancellation_count,   # Абсолютное число отмен
+        'missed_calls_count': missed_calls_count,    # Абсолютное число недозвонов
+        'website_confirmations_sum': website_confirmations_sum,  # Сумма по вебсайт подтверждениям
+        'whatsapp_night_sum': whatsapp_night_sum,    # Сумма по WhatsApp ночное время
+        'whatsapp_work_sum': whatsapp_work_sum       # Сумма по WhatsApp рабочее время
+    }
+    
+def parse_time(time_str):
+    """Parse time string in format HH:MM to hours and minutes"""
+    if not time_str:
+        return None
+    
+    try:
+        hours, minutes = map(int, time_str.split(':'))
+        return hours, minutes
+    except (ValueError, TypeError):
+        logger.error(f"Invalid time format: {time_str}")
+        return None
+
+
+def get_webhooks_by_filter(date=None, hook_type=None, time_point=None, time_from=None, time_to=None, limit=100):
+    """Get webhooks by filter criteria including time filters"""
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=20)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # Check if the received_at_moscow column exists
+        try:
+            cursor.execute("SELECT received_at_moscow FROM webhooks LIMIT 1")
+            use_moscow_time = True
+        except sqlite3.OperationalError:
+            use_moscow_time = False
+
+        if use_moscow_time:
+            query = "SELECT id, hook_type, name, summa, received_at_moscow as received_at, processing_date, raw_data FROM webhooks WHERE 1=1"
+        else:
+            query = "SELECT id, hook_type, name, summa, datetime(received_at, 'localtime') as received_at, processing_date, raw_data FROM webhooks WHERE 1=1"
+
+        params = []
+
+        if date:
+            query += " AND processing_date = ?"
+            params.append(date)
+
+        if hook_type:
+            query += " AND hook_type = ?"
+            params.append(hook_type)
+            
+        # Добавляем фильтрацию по времени
+        if time_point:
+            # Для конкретного времени ищем все записи до этого времени
+            parsed_time = parse_time(time_point)
+            if parsed_time:
+                hours, minutes = parsed_time
+                time_format = f"{hours:02d}:{minutes:02d}"
+                
+                if use_moscow_time:
+                    # Формат SQL-запроса для времени в текстовом формате
+                    query += " AND substr(received_at_moscow, 12, 5) <= ?"
+                else:
+                    # Формат для времени в стандартном формате SQLite
+                    query += " AND time(received_at) <= ?"
+                
+                params.append(time_format)
+                logger.info(f"Filtering webhooks for time point <= {time_format}")
+        
+        elif time_from and time_to:
+            # Для диапазона времени
+            from_time = parse_time(time_from)
+            to_time = parse_time(time_to)
+            
+            if from_time and to_time:
+                from_hours, from_minutes = from_time
+                to_hours, to_minutes = to_time
+                
+                from_format = f"{from_hours:02d}:{from_minutes:02d}"
+                to_format = f"{to_hours:02d}:{to_minutes:02d}"
+                
+                if use_moscow_time:
+                    query += " AND substr(received_at_moscow, 12, 5) >= ? AND substr(received_at_moscow, 12, 5) <= ?"
+                else:
+                    query += " AND time(received_at) >= ? AND time(received_at) <= ?"
+                
+                params.append(from_format)
+                params.append(to_format)
+                logger.info(f"Filtering webhooks for time range {from_format} - {to_format}")
+
+        query += " ORDER BY received_at DESC LIMIT ?"
+        params.append(limit)
+
+        logger.info(f"Executing query: {query} with params: {params}")
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+
+        # Convert to list of dictionaries
+        webhooks = []
+        for row in rows:
+            webhook = {}
+            for key in row.keys():
+                webhook[key] = row[key]
+            webhooks.append(webhook)
+
+        conn.close()
+        logger.info(f"Retrieved {len(webhooks)} webhooks matching filter criteria")
+        return webhooks
+    except Exception as e:
+        logger.error(f"Error getting webhooks: {str(e)}")
+        logger.error(traceback.format_exc())
+        if 'conn' in locals() and conn:
+            conn.close()
+        return []
+    
+def calculate_stats_for_time_filter(date, time_point=None, time_from=None, time_to=None):
+    """Calculate statistics for webhooks filtered by time"""
+    try:
+        # Get all webhooks for the specified date and time filters
+        webhooks = get_webhooks_by_filter(
+            date=date, 
+            time_point=time_point, 
+            time_from=time_from, 
+            time_to=time_to, 
+            limit=10000  # Увеличиваем лимит, чтобы получить все вебхуки за день
+        )
+        
+        # Initialize stats dictionary with zeros (теперь до 46)
+        stats_dict = {f"hook{i}_count": 0 for i in range(1, 47)}  # Изменено с 35 на 47
+        stats_dict.update({f"hook{i}_sum": 0 for i in range(1, 47)})  # Изменено с 35 на 47
+        stats_dict['total_count'] = 0
+        stats_dict['total_sum'] = 0
+        stats_dict['website_confirmations_sum'] = 0
+        stats_dict['whatsapp_night_sum'] = 0
+        stats_dict['whatsapp_work_sum'] = 0
+        
+        # Count webhooks by type and sum values
+        for webhook in webhooks:
+            hook_type = webhook.get('hook_type', '')
+            if hook_type and hook_type.startswith('hook') and '_count' in hook_type:
+                # Increment count
+                stats_dict[hook_type] = stats_dict.get(hook_type, 0) + 1
+                stats_dict['total_count'] += 1
+                
+                # Extract hook number for sum column
+                try:
+                    hook_num = int(hook_type.replace('hook', '').replace('_count', ''))
+                    sum_key = f"hook{hook_num}_sum"
+                    
+                    # Add summa value
+                    summa_str = webhook.get('summa', '0')
+                    try:
+                        # Clean and convert summa to integer
+                        if not summa_str or summa_str.lower() in ('__', 'none', 'null', ''):
+                            summa_int = 0
+                        else:
+                            # Remove non-numeric chars except decimal point
+                            summa_clean = ''.join(c for c in str(summa_str) if c.isdigit() or c in '.,')
+                            summa_clean = summa_clean.replace(',', '.')
+                            
+                            if summa_clean:
+                                summa_int = int(float(summa_clean))
+                            else:
+                                summa_int = 0
+                        
+                        stats_dict[sum_key] = stats_dict.get(sum_key, 0) + summa_int
+                        stats_dict['total_sum'] += summa_int
+                        
+                        # Add to website confirmations sum if it's hooks 31-34
+                        if hook_num in [31, 32, 33, 34]:
+                            stats_dict['website_confirmations_sum'] += summa_int
+                        
+                        # Add to WhatsApp night sum if it's hooks 35-39
+                        if hook_num in [35, 36, 37, 38, 39]:
+                            stats_dict['whatsapp_night_sum'] += summa_int
+                        
+                        # Add to WhatsApp work sum if it's hooks 40-44
+                        if hook_num in [40, 41, 42, 43, 44]:
+                            stats_dict['whatsapp_work_sum'] += summa_int
+                            
+                    except (ValueError, TypeError):
+                        # If conversion fails, don't add to sum
+                        pass
+                except ValueError:
+                    # If hook number extraction fails, skip
+                    pass
+        
+        logger.info(f"Calculated stats for time filter: {stats_dict}")
+        return stats_dict
+    except Exception as e:
+        logger.error(f"Error calculating stats for time filter: {str(e)}")
+        logger.error(traceback.format_exc())
+        return {}
 
 
 # API endpoint for filtered webhooks
@@ -818,7 +924,7 @@ def handle_webhook(hook_num, path):
     logger.info(f"Hook number: {hook_num}")
     logger.info(f"Path parameter: {path}")
     
-    if hook_num < 1 or hook_num > 46:  # Теперь до 46
+    if hook_num < 1 or hook_num > 46:  # Изменено с 34 на 46
         return jsonify({"error": "Invalid webhook number"}), 400
 
     hook_type = f"hook{hook_num}_count"
@@ -885,7 +991,7 @@ def handle_webhook(hook_num, path):
         
         # For hooks 31-46, we can process directly for faster response
         # but also add to queue for backup processing
-        if hook_num in list(range(31, 47)):  # Hooks 31-46 (special hooks)
+        if hook_num in list(range(31, 47)):  # Hooks 31-46
             logger.info(f"Processing special webhook directly: {hook_type}")
             success = save_webhook(hook_type, name, summa, raw_data)
         else:
@@ -944,7 +1050,7 @@ def index():
             logger.info(f"Using full day statistics")
 
         # For template compatibility, ensure all hook counts and sums exist
-        for i in range(1, 47):  # До 46
+        for i in range(1, 47):  # Изменено с 35 на 47
             count_key = f"hook{i}_count"
             sum_key = f"hook{i}_sum"
             if count_key not in stats_dict or stats_dict[count_key] is None:
@@ -964,8 +1070,55 @@ def index():
             limit=50
         )
         
-        # Get webhook stage names
-        webhook_types = get_webhook_stage_names()
+        # Define webhook stage names (добавлены 35-46 пункты)
+        webhook_types = {
+            "hook1_count": "1. Все сделки",
+            "hook2_count": "2. Без статуса",
+            "hook3_count": "3. без даты",
+            "hook4_count": "4. без региона",
+            "hook5_count": "5. без суммы",
+            "hook6_count": "6. без адреса",
+            "hook7_count": "7. все готово",
+            "hook8_count": "8. мск",
+            "hook9_count": "9. Спб",
+            "hook10_count": "10. Регион",
+            "hook11_count": "11. ЗВоним без предоплаты",
+            "hook12_count": "12. Звоним без предоплаты несколько товаров",
+            "hook13_count": "13. Подтвердил заказ без предоплаты",
+            "hook14_count": "14. Отменил заказ без предоплаты",
+            "hook15_count": "15. Не взял трубку без предоплаты",
+            "hook16_count": "16. ЗВоним с предоплатой",
+            "hook17_count": "17. Звоним с предоплатой несколько товаров",
+            "hook18_count": "18. Подтвердил заказ с предоплатой",
+            "hook19_count": "19. Отменил заказ с предоплатой",
+            "hook20_count": "20. Не взял трубку с предоплатой",
+            "hook21_count": "21. ЗВоним регион",
+            "hook22_count": "22. Подтвердил заказ регион",
+            "hook23_count": "23. Отменил заказ регион",
+            "hook24_count": "24. Не взял трубку регион",
+            "hook25_count": "25. неопонятно",
+            "hook26_count": "26. автоответчик",
+            "hook27_count": "27. Резерв",
+            "hook28_count": "28. Резерв",
+            "hook29_count": "29. Резерв",
+            "hook30_count": "30. Резерв",
+            "hook31_count": "31. Подтвердил на сайте с предоплатой",
+            "hook32_count": "32. Не подтвердил на сайте с предоплатой",
+            "hook33_count": "33. Подтвердил на сайте без предоплаты",
+            "hook34_count": "34. Не подтвердил на сайте без предоплаты",
+            "hook35_count": "35. Ватсап ночное время пишем",
+            "hook36_count": "36. Ватсап ночное время подтвердил",
+            "hook37_count": "37. Ватсап ночное время отменил",
+            "hook38_count": "38. Ватсап ночное время изменить",
+            "hook39_count": "39. Ватсап ночное время не ответил",
+            "hook40_count": "40. Ватсап рабочее время пишем",
+            "hook41_count": "41. Ватсап рабочее время подтвердил",
+            "hook42_count": "42. Ватсап рабочее время отменил",
+            "hook43_count": "43. Ватсап рабочее время изменить",
+            "hook44_count": "44. Ватсап рабочее время не ответил",
+            "hook45_count": "45. Итог ночное время",
+            "hook46_count": "46. Итог рабочее время"
+        }
         
         # Add stage name to each webhook
         for webhook in webhooks:
@@ -1022,7 +1175,7 @@ def index():
 def reset_stats():
     """Reset all statistics (for testing purposes)"""
     try:
-        conn = sqlite3.connect(DB_PATH, timeout=20)
+        conn = sqlite3.connect(DB_PATH, timeout=20)  # Increase timeout to avoid database locks
         cursor = conn.cursor()
 
         # Delete all webhook data
@@ -1059,9 +1212,9 @@ def generate_test_data():
             "Клиент Иванов"
         ]
 
-        # Generate 46 webhooks, one for each type (до 46)
+        # Generate 46 webhooks, one for each type (теперь до 46)
         import random
-        for i in range(1, 47):  # До 46
+        for i in range(1, 47):  # Изменено с 35 на 47
             hook_type = f"hook{i}_count"
             name = random.choice(deal_names)
             summa = str(random.randint(5000, 50000))
@@ -1074,7 +1227,7 @@ def generate_test_data():
                 'raw_data': f"{{'name': '{name}', 'summa': '{summa}'}}"
             })
 
-        logger.info(f"Generated 46 test webhooks")
+        logger.info(f"Generated 46 test webhooks")  # Изменено с 34 на 46
         return redirect(url_for('index'))
     except Exception as e:
         logger.error(f"Error generating test data: {str(e)}")
@@ -1086,7 +1239,7 @@ def generate_test_data():
 def debug():
     """Debug page to check database and queue status"""
     try:
-        conn = sqlite3.connect(DB_PATH, timeout=20)
+        conn = sqlite3.connect(DB_PATH, timeout=20)  # Increase timeout to avoid database locks
         cursor = conn.cursor()
 
         # Get database info
@@ -1150,11 +1303,12 @@ def debug():
         <p>{get_moscow_now().strftime('%Y-%m-%d %H:%M:%S (%Z)')}</p>
         <p>Processing date: {get_processing_date()}</p>
         
-        <h2>New WhatsApp KPIs</h2>
-        <p>Website confirmations sum: hooks 31-34</p>
-        <p>WhatsApp night time sum: hooks 35-39 (Ватсап ночное время)</p>
-        <p>WhatsApp work time sum: hooks 40-44 (Ватсап рабочее время)</p>
-        <p>Summary hooks: hooks 45-46 (Итоговые показатели)</p>
+        <h2>Website Confirmations KPI</h2>
+        <p>This will show the sum of hooks 31-34 (website confirmations)</p>
+        
+        <h2>WhatsApp KPIs</h2>
+        <p>Night time sum: hooks 35-39 (WhatsApp ночное время)</p>
+        <p>Work time sum: hooks 40-44 (WhatsApp рабочее время)</p>
         """
 
         return debug_info
@@ -1171,68 +1325,29 @@ def debug():
 def favicon():
     return '', 204
 
+
 if __name__ == '__main__':
-    logger.info("=== STARTING WEBHOOK APPLICATION ===")
-    
-    # Check database before starting
-    if not os.path.exists(DB_PATH):
-        logger.error("❌ Database file doesn't exist!")
-        logger.error("Creating database...")
-        if not init_db():
-            logger.error("❌ Failed to create database!")
-            logger.error("Please check permissions and try again.")
-            exit(1)
-    elif os.path.getsize(DB_PATH) == 0:
-        logger.error("❌ Database file is empty!")
-        logger.error("Initializing database...")
-        if not init_db():
-            logger.error("❌ Failed to initialize database!")
-            exit(1)
-    else:
-        logger.info(f"✅ Database found: {DB_PATH} ({os.path.getsize(DB_PATH)} bytes)")
-    
-    # Test database connection
+    # Initialize database
     try:
+        init_db()
+        logger.info("Database initialized successfully")
+
+        # Test database connection
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        tables = [row[0] for row in cursor.fetchall()]
-        logger.info(f"✅ Database tables: {tables}")
-        
-        # Check if we have required tables
-        required_tables = ['webhooks', 'daily_stats']
-        missing_tables = [t for t in required_tables if t not in tables]
-        if missing_tables:
-            logger.error(f"❌ Missing tables: {missing_tables}")
-            logger.error("Reinitializing database...")
-            conn.close()
-            if not init_db():
-                logger.error("❌ Failed to reinitialize database!")
-                exit(1)
-        else:
-            conn.close()
-            logger.info("✅ Database check passed")
-        
+        tables = cursor.fetchall()
+        logger.info(f"Database tables: {[table[0] for table in tables]}")
+        conn.close()
     except Exception as e:
-        logger.error(f"❌ Database check failed: {e}")
-        logger.error("Trying to reinitialize database...")
-        if not init_db():
-            logger.error("❌ Failed to reinitialize database!")
-            exit(1)
-    
+        logger.error(f"Database initialization error: {str(e)}")
+        logger.error(traceback.format_exc())
+
     # Create templates directory if it doesn't exist
     os.makedirs('templates', exist_ok=True)
-    
-    # Start webhook processor thread (не используется, но запускаем для совместимости)
+
+    # Start webhook processor thread
     processor_thread = threading.Thread(target=webhook_processor)
     processor_thread.daemon = True
     processor_thread.start()
-    logger.info("✅ Background thread started (direct processing enabled)")
-
-    # Log some useful info
-    logger.info(f"📅 Current processing date: {get_processing_date()}")
-    logger.info(f"🕐 Current Moscow time: {get_moscow_now().strftime('%Y-%m-%d %H:%M:%S')}")
-    logger.info(f"🌐 Starting Flask application on port 8000")
-    
-    # ИСПРАВЛЕННЫЙ ЗАПУСК - для разработки
-    app.run(host='0.0.0.0', port=8000, debug=False)
+    logger.info("Webhook processor thread starte
